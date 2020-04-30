@@ -199,10 +199,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     print('Wrote', pth+basename+'.mom1.fits.gz')
     # --- Moment 2: require at least 3 unmasked channels at each pixel
     dil_mskcub_mom2 = dil_mskcub.linewidth_sigma().to(u.km/u.s)
-<<<<<<< HEAD
     dil_mskcub_mom2[nchanimg < 3] = np.nan
-=======
->>>>>>> parent of 6222cd2... blank mom2 pixels with zero values; avoid the Nan-related warning from lambda functions
     hdr['datamin'] = np.nanmin(dil_mskcub_mom2.value)
     hdr['datamax'] = np.nanmax(dil_mskcub_mom2.value)
     hdr['bunit'] = dil_mskcub_mom2.unit.to_string('fits')

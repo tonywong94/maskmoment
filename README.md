@@ -1,15 +1,19 @@
 # maskmoment
-Masked moments of radio data cubes
+Masked moments of radio data cubes, prototype version.
 
 Based on idl_mommaps: https://github.com/tonywong94/idl_mommaps
+
+Required packages: [spectral_cube](https://spectral-cube.readthedocs.io/), [radio_beam](https://radio-beam.readthedocs.io/), [astropy](https://www.astropy.org), [scipy](https://www.scipy.org)
 
 Currently this should not be installed in your site-packages area.  Just import
 it using
 
-sys.path.append('/path/to/maskmoment/')  
-from maskmoment import maskmoment
+    sys.path.append('/path/to/maskmoment/')  
+    from maskmoment import maskmoment
 
-maskmoment(img_fits, *other parameters*)
+and then call it using
+
+    maskmoment(img_fits, *other parameters*)
 
     Parameters
     ----------

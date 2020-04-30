@@ -6,8 +6,7 @@ Based on idl_mommaps: https://github.com/tonywong94/idl_mommaps
 Currently this should not be installed in your site-packages area.  Just import
 it using
 
-sys.path.append('/path/to/maskmoment/')
-
+sys.path.append('/path/to/maskmoment/')  
 from maskmoment import maskmoment
 
 maskmoment(img_fits, *other parameters*)

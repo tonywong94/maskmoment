@@ -1,5 +1,5 @@
 # maskmoment
-Masked moments of radio data cubes, using a dilated masking approach.
+Masked moments of radio data cubes, using a dilated masking approach.  The basic idea is that the mask is produced from the cube itself, by taking a high significance contour (e.g. 4-sigma) and expanding it to a surrounding lower-significance contour (e.g. 2-sigma).  User has the option to smooth the data (spatially and/or spectrally) before defining these contours, and to pad the mask by a certain number of pixels in all directions.  An estimate of the noise at each location in the cube is needed, which can be provided from a different input cube, or can be calculated by the script from the data, optionally using a gain image.
 
 Based on idl_mommaps: https://github.com/tonywong94/idl_mommaps
 
@@ -8,6 +8,7 @@ Required packages: [spectral_cube](https://spectral-cube.readthedocs.io/), [radi
 Currently this should **not** be installed in your site-packages area.  Just import
 it using
 
+    import sys
     sys.path.append('/path/to/maskmoment/')  
     from maskmoment import maskmoment
 

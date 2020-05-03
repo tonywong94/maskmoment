@@ -15,8 +15,8 @@ and then call it using
 
     maskmoment(img_fits, *other parameters*)
 
-    Main Parameters (see code for additional options)
-    -------------------------------------------------
+### Main Parameters (see code for additional options)
+
     img_fits : FITS file name, required
         The image cube, this should be in units of K, Jy/beam, or equivalent.
     gain_fits : FITS file name, optional

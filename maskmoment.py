@@ -3,25 +3,15 @@ import os
 from spectral_cube import SpectralCube
 from astropy.io import fits
 from astropy import units as u
-from momfuncs import makenoise, dilmsk, smcube, findflux
-
-#from datetime import datetime
-#from astropy.stats import mad_std
-#from scipy import ndimage
-#import radio_beam
-#from astropy.convolution import Gaussian1DKernel
-#from astropy import wcs
-#from astropy.convolution import convolve_fft
-
-# 1. Need to calculate errors in moments
-# 2. Need to allow different spectral smoothing (e.g. boxcar)
+from momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
 
 def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=None, 
                 snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, min_tot_ch=2, 
-                nguard=[0,0], edgech=5, fwhm=None, vsm=None, vsm_type='gauss',
-                output_snr_cube=False, to_kelvin=True):
+                min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, vsm=None, 
+                vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, output_snr_cube=False, 
+                to_kelvin=True, altoutput=False):
     """
-    Produce FITS images of moment maps using a dilated mask approach.
+    Produce FITS images of moment maps using a dilated masking approach.
 
     Parameters
     ----------
@@ -38,18 +28,18 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
     outdir : string, optional
-        Directory to write the output files
-        Default: Same directory as img_fits.
+        Directory to write the output files.
+        Default: Write to the directory where img_fits resides.
         NOTE: Currently this directory is assumed to exist.
     outname : string, optional
         Basname for output files.  For instance, outname='foo' produces files
         'foo.mom0.fits.gz', etc.
         Default: Based on root name of img_fits.
     snr_hi : float, optional
-        The high significance threshold from which to begin the mask dilation.
+        The high significance sigma threshold from which to begin mask dilation.
         Default: 4
     snr_lo : float, optional
-        The low significance threshold at which to end the mask dilation.
+        The low significance sigma threshold at which to end mask dilation.
         Default: 2
     minbeam : float, optional
         Minimum velocity-integrated area of a mask region in units of the beam size.
@@ -61,6 +51,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     min_tot_ch : int, optional
         Dilated mask regions are required to span at least this many channels.
         Default: 2
+    min_tot_all : boolean, optional
+        Enforce min_tot_ch for all pixels instead of for regions as a whole.
+        Default: False
     nguard : tuple of two ints, optional
         Expand the final mask by this nguard[0] pixels in sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
@@ -76,26 +69,38 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         If value is not astropy quantity, assumed to be given in arcsec.
         Default: No spatial smoothing is applied.
     vsm : float or :class:`~astropy.units.Quantity`, optional
-        Width of the spectral smoothing kernel.  If given as astropy quantity,
-        should be given in velocity units.  If not given as astropy quantity, 
-        assumed to be given in *numbers of channels*.
+        Full width of the spectral smoothing kernel (or FWHM for gaussian).  
+        If given as astropy quantity, should be given in velocity units.  
+        If not given as astropy quantity, interpreted as number of channels.
         Default: No spectral smoothing is applied.
     vsm_type : string, optional
         What type of spectral smoothing to employ.  Currently three options:
-        (1) 'boxcar' - 1D boxcar smoothing, vsm rounded to integer no. of chans.
-        (2) 'gauss' - 1D gaussian smoothing, vsm is the convolving gaussian sigma.
-        (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian sigma
-        after convolution, assuming sigma before convolution is 1 channel width.        
+        (1) 'boxcar' - 1D boxcar smoothing, vsm rounded to integer # of chans.
+        (2) 'gauss' - 1D gaussian smoothing, vsm is the convolving gaussian FWHM.
+        (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian FWHM
+            after convolution, assuming FWHM before convolution is 1 channel.        
         Default: 'gauss'
+    mom1_chmin : int, optional
+        Minimum number of unmasked channels needed to calculate moment-1.
+        Default: 2
+    mom2_chmin : int, optional
+        Minimum number of unmasked channels needed to calculate moment-2.
+        Default: 2
     output_snr_cube : boolean, optional
         Output the cube is SNR units in addition to the moment maps.
         Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
         Default: True
+    altoutput : boolean, optional
+        Also output moment maps from a "direct" calculation instead of
+        the moment method in spectral_cube.  Mainly used for debugging.
+        Default: False
     """
     np.seterr(divide='ignore', invalid='ignore')
-    # --- Determine output file names
+    #
+    # --- DETERMINE OUTPUT FILE NAMES
+    #
     if outdir is not None:
         pth = outdir+'/'
     else:
@@ -108,10 +113,13 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         else:
             basename = os.path.splitext(img_fits)[0]
     print('\nOutput basename is:',basename)
-    # --- Read input files
+    #
+    # --- READ INPUT FILES, OUTPUT NOISE CUBE IF NEWLY GENERATED
+    #
     image_cube = SpectralCube.read(img_fits)
     hdr = image_cube.header
     savehd = hdr.copy()
+    has_jypbeam = all(x in (savehd['bunit']).upper() for x in ['JY', 'B'])
     print('Image cube '+img_fits+':\n',image_cube)
     if rms_fits is not None:
         rms_cube = SpectralCube.read(rms_fits)
@@ -129,7 +137,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         fits.writeto(pth+basename+'.ecube.fits.gz', rms_cube._data.astype(np.float32),
                  hdr, overwrite=True)
         print('Wrote', pth+basename+'.ecube.fits.gz')
-    # --- Peak SNR image
+    #
+    # --- GENERATE AND OUTPUT SNR CUBE, PEAK SNR IMAGE
+    #
     snr_cube = image_cube / rms_cube
     print('\nSNR cube:\n',snr_cube)
     if output_snr_cube:
@@ -147,16 +157,18 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
                  hd2d, overwrite=True)
     print('Wrote', pth+basename+'.snrpk.fits.gz')
-    # --- Generate dilated mask
-    if fwhm > 0:
-        sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, edgech=edgech)
+    #
+    # --- GENERATE AND OUTPUT DILATED MASK
+    #
+    if fwhm is not None or vsm is not None:
+        sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, vsm_type=vsm_type, edgech=edgech)
         print('Smoothed SNR cube:\n', sm_snrcube)
         dilcube = sm_snrcube
     else:
         dilcube = snr_cube
     dilatedmask = dilmsk(dilcube, header=hdr, snr_hi=snr_hi, snr_lo=snr_lo, 
                          min_thresh_ch=min_thresh_ch, min_tot_ch=min_tot_ch, 
-                         nguard=nguard, minbeam=minbeam, debug=False)
+                         min_tot_all=min_tot_all, nguard=nguard, minbeam=minbeam)
     hdr['datamin'] = 0
     hdr['datamax'] = 1
     hdr['bunit'] = ' '
@@ -164,116 +176,66 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
                  hdr, overwrite=True)
     print('Wrote', pth+basename+'.mask.fits.gz')
     nchanimg = np.sum(dilatedmask, axis=0)
-    # --- Generate moment maps from masked cube
+    #
+    # --- GENERATE AND OUTPUT MOMEMT MAPS
+    #
     dil_mskcub = image_cube.with_mask(dilatedmask > 0)
+    rms_mskcub = rms_cube.with_mask(dilatedmask > 0)
     print('Units of cube are', dil_mskcub.unit)
     if to_kelvin:
         dil_mskcub_k = dil_mskcub.to(u.K)
         dil_mskcub = dil_mskcub_k
         dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.K*u.km/u.s)
-    elif all(x in (savehd['bunit']).upper() for x in ['JY', 'B']):  # keep Jy/bm
-        #omega_B = ((savehd['bmaj']*u.deg*savehd['bmin']*u.deg)*2*np.pi/(8*np.log(2)))
+    elif has_jypbeam:  # keep Jy/bm but use km/s
         dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.Jy/u.beam*u.km/u.s)
     else:
         dil_mskcub_mom0 = dil_mskcub.moment(order=0)
     if hasattr(dil_mskcub_mom0, 'unit'):
         print('Units of mom0 map are', dil_mskcub_mom0.unit)
-    hdr['datamin'] = np.nanmin(dil_mskcub_mom0.value)
-    hdr['datamax'] = np.nanmax(dil_mskcub_mom0.value)
-    hdr['bunit'] = dil_mskcub_mom0.unit.to_string('fits')
-    fits.writeto(pth+basename+'.mom0.fits.gz', dil_mskcub_mom0.astype(np.float32),
-                 hdr, overwrite=True)
-    print('Wrote', pth+basename+'.mom0.fits.gz')
-    # --- Moment 1: require at least 2 unmasked channels at each pixel
+    writemom(dil_mskcub_mom0, type='mom0', filename=pth+basename, hdr=hd2d)
+    # --- Moment 1: mean velocity must be in range of cube
     dil_mskcub_mom1 = dil_mskcub.moment(order=1).to(u.km/u.s)
-    vmin = dil_mskcub.spectral_extrema[0]
-    vmax = dil_mskcub.spectral_extrema[1]
-    dil_mskcub_mom1[dil_mskcub_mom1 < vmin] = np.nan
-    dil_mskcub_mom1[dil_mskcub_mom1 > vmax] = np.nan
-    dil_mskcub_mom1[nchanimg < 2] = np.nan
-    hdr['datamin'] = np.nanmin(dil_mskcub_mom1.value)
-    hdr['datamax'] = np.nanmax(dil_mskcub_mom1.value)
-    hdr['bunit'] = dil_mskcub_mom1.unit.to_string('fits')
-    fits.writeto(pth+basename+'.mom1.fits.gz', dil_mskcub_mom1.astype(np.float32),
-                 hdr, overwrite=True)
-    print('Wrote', pth+basename+'.mom1.fits.gz')
-    # --- Moment 2: require at least 3 unmasked channels at each pixel
+    dil_mskcub_mom1[dil_mskcub_mom1 < dil_mskcub.spectral_extrema[0]] = np.nan
+    dil_mskcub_mom1[dil_mskcub_mom1 > dil_mskcub.spectral_extrema[1]] = np.nan
+    dil_mskcub_mom1[nchanimg < mom1_chmin] = np.nan
+    writemom(dil_mskcub_mom1, type='mom1', filename=pth+basename, hdr=hd2d)
+    # --- Moment 2: require at least 2 unmasked channels at each pixel
     dil_mskcub_mom2 = dil_mskcub.linewidth_sigma().to(u.km/u.s)
-    dil_mskcub_mom2[nchanimg < 3] = np.nan
-    hdr['datamin'] = np.nanmin(dil_mskcub_mom2.value)
-    hdr['datamax'] = np.nanmax(dil_mskcub_mom2.value)
-    hdr['bunit'] = dil_mskcub_mom2.unit.to_string('fits')
-    fits.writeto(pth+basename+'.mom2.fits.gz', dil_mskcub_mom2.astype(np.float32),
-                 hdr, overwrite=True)
-    print('Wrote', pth+basename+'.mom2.fits.gz')
+    dil_mskcub_mom2[nchanimg < mom2_chmin] = np.nan
+    writemom(dil_mskcub_mom2, type='mom2', filename=pth+basename, hdr=hd2d)
+    #
+    # --- CALCULATE ERRORS IN MOMENTS
+    #
+    altmom, errmom = calc_moments(image_cube, rms_cube, dilatedmask)
+    errmom0 = errmom[0] * abs(savehd['CDELT3'])/1000 * dil_mskcub_mom0.unit
+    errmom0[nchanimg == 0] = np.nan
+    writemom(errmom0, type='emom0', filename=pth+basename, hdr=hd2d)
+    errmom1 = errmom[1] * u.km/u.s
+    errmom1[dil_mskcub_mom1 < dil_mskcub.spectral_extrema[0]] = np.nan
+    errmom1[dil_mskcub_mom1 > dil_mskcub.spectral_extrema[1]] = np.nan
+    errmom1[nchanimg < mom1_chmin] = np.nan
+    writemom(errmom1, type='emom1', filename=pth+basename, hdr=hd2d)
+    errmom2 = errmom[2] * u.km/u.s
+    errmom2[nchanimg < mom2_chmin] = np.nan
+    writemom(errmom2, type='emom2', filename=pth+basename, hdr=hd2d)
+    if altoutput:
+        altmom0 = altmom[0] * abs(savehd['CDELT3'])/1000 * dil_mskcub_mom0.unit 
+        altmom0[nchanimg == 0] = np.nan
+        altmom1 = altmom[1] * u.km/u.s
+        altmom1[altmom1 < vmin] = np.nan
+        altmom1[altmom1 > vmax] = np.nan
+        altmom1[nchanimg < mom1_chmin] = np.nan
+        altmom2 = altmom[2] * u.km/u.s
+        altmom2[nchanimg < mom2_chmin] = np.nan
+        writemom(altmom0, type='amom0', filename=pth+basename, hdr=hd2d)
+        writemom(altmom1, type='amom1', filename=pth+basename, hdr=hd2d)
+        writemom(altmom2, type='amom2', filename=pth+basename, hdr=hd2d)
+    #
+    # --- CALCULATE FLUXES
+    #
     fluxtab = findflux(image_cube, rms_cube, dilatedmask)
     fluxtab.write(pth+basename+'.flux.csv', delimiter=',', format='ascii.ecsv', 
                   overwrite=True)
     print('Wrote', pth+basename+'.flux.csv')
     return
 
-# def moments_smo(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=None, 
-#                 snr_hi=4, snr_lo=2, min_thresh_ch=1, min_tot_ch=2, nguard=[0,0], 
-#                 minbeam=1, edgech=5, fwhm=12, vsm=None, output_snr_cube=False):
-#     np.seterr(divide='ignore', invalid='ignore')
-#     # --- Determine output file names
-#     if outdir is not None:
-#         pth = outdir+'/'
-#     else:
-#         pth = os.path.dirname(img_fits)+'/'
-#     if outname is not None:
-#         basename = outname
-#     else:
-#         if img_fits.endswith('.fits.gz'):
-#             basename = os.path.splitext(os.path.splitext(img_fits)[0])[0]
-#         else:
-#             basename = os.path.splitext(img_fits)[0]
-#     print('\nOutput basename is:',basename)
-#     # --- Read input files
-#     image_cube = SpectralCube.read(img_fits)
-#     hdr = image_cube.header
-#     print('Image cube '+img_fits+':\n',image_cube)
-#     if rms_fits is not None:
-#         rms_cube = SpectralCube.read(rms_fits)
-#         print('Noise cube '+rms_fits+':\n',rms_cube)
-#         # Should check that units of rms_cube match image_cube
-#     elif gain_fits is not None:
-#         gain_cube  = SpectralCube.read(gain_fits)
-#         print('Gain cube '+gain_fits+':\n',gain_cube)
-#         rms_cube = makenoise(image_cube, gain_cube, edge=edgech)
-#         print('Noise cube:\n',rms_cube)
-#         hdr['datamin'] = np.nanmin(rms_cube)
-#         hdr['datamax'] = np.nanmax(rms_cube)
-#         fits.writeto(pth+basename+'.ecube.fits.gz', rms_cube._data.astype(np.float32),
-#                  hdr, overwrite=True)
-#         print('Wrote', pth+basename+'.ecube.fits.gz')
-#     # --- Peak SNR image
-#     snr_cube = image_cube / rms_cube
-#     snr_peak = snr_cube.max(axis=0)
-#     hd2d = hdr.copy()
-#     hd2d['datamin'] = np.nanmin(snr_peak.value)
-#     hd2d['datamax'] = np.nanmax(snr_peak.value)
-#     hd2d['bunit'] = ' '
-#     fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
-#                  hd2d, overwrite=True)
-#     print('Wrote', pth+basename+'.snrpk.fits.gz')
-#     if output_snr_cube:
-#         hdr['datamin'] = snr_cube.min().value
-#         hdr['datamax'] = snr_cube.max().value
-#         hdr['bunit'] = ' '
-#         fits.writeto(pth+basename+'.snrcube.fits.gz', snr_cube._data.astype(np.float32),
-#                      hdr, overwrite=True)
-#         print('Wrote', pth+basename+'.snrcube.fits.gz')    
-#     # --- Generate dilated mask
-#     sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, edgech=edgech)
-#     print(sm_snrcube)
-#     dilatedmask = dilmsk(sm_snrcube, header=hdr, snr_hi=snr_hi, snr_lo=snr_lo, 
-#                          min_thresh_ch=min_thresh_ch, min_tot_ch=min_tot_ch, 
-#                          nguard=nguard, minbeam=minbeam, debug=False)
-#     hdr['datamin'] = 0
-#     hdr['datamax'] = 1
-#     hdr['bunit'] = ' '
-#     fits.writeto(pth+basename+'.mask.fits.gz', dilatedmask.astype(np.float32),
-#                  hdr, overwrite=True)
-#     print('Wrote', pth+basename+'.mask.fits.gz')
-#     return

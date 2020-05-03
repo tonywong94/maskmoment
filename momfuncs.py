@@ -1,17 +1,14 @@
 import numpy as np
-import os
-from datetime import datetime
+import radio_beam
 from scipy import ndimage
-from spectral_cube import SpectralCube
 from astropy.stats import mad_std
 from astropy.io import fits
 from astropy import units as u
-
-import radio_beam
 from astropy.convolution import Gaussian1DKernel
 from astropy import wcs
 from astropy.convolution import convolve, convolve_fft
 from astropy.table import Table
+from spectral_cube import SpectralCube
 
 
 def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, clip=0.2):
@@ -46,7 +43,7 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
 
     Returns
     -------
-    noisearray : SpectralCube or `~numpy.ndarray`
+    noisecube *or* noisearray : SpectralCube or `~numpy.ndarray`
         The noise estimate as a 3-D array with the same shape and units as 
         the input cube.
         If the input cube was a SpectralCube, a SpectralCube is returned.
@@ -197,7 +194,7 @@ def maskguard(maskarray, niter=1, xyonly=False, vonly=False):
 
 
 def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, 
-            min_tot_ch=2, nguard=[0,0], debug=False):
+            min_tot_ch=2, min_tot_all=False, nguard=[0,0], debug=False):
     """
     Dilate a mask from one specified threshold to another.
 
@@ -224,6 +221,9 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
     min_tot_ch : int, optional
         Dilated mask regions are required to span at least this many channels.
         Default: 2
+    min_tot_all : boolean, optional
+        Enforce min_tot_ch for all pixels instead of for regions as a whole.
+        Default: False
     nguard : tuple of two ints, optional
         Expand the final mask by this nguard[0] pixels in sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
@@ -273,7 +273,7 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
             hdr['datamax'] = num_edge
             fits.writeto('labeled_edge.fits.gz', labeled_edge.astype(np.uint8), hdr, overwrite=True)
         print('Found {} objects with SNR above {}'.format(num_edge, snr_lo))
-        # Reject islands which do not reach high significance threshold
+        # Keep only islands which reach high significance threshold
         hieval = labeled_edge[thresh_mask]
         dil_mask = np.isin(labeled_edge, hieval) & edge_mask
         if debug:
@@ -283,7 +283,7 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
         dil_mask = thresh_mask
     # Final pruning to enforce area and total vel width constraints
     if min_tot_ch > 1 or minarea > 0:
-        dil_mask = prunemask(dil_mask, minarea=minarea, minch=min_tot_ch)
+        dil_mask = prunemask(dil_mask, minarea=minarea, minch=min_tot_ch, byregion=~min_tot_all)
         if debug:
             fits.writeto('pruned_mask.fits.gz', dil_mask.astype(np.uint8), hdr, overwrite=True)
     # Expand by nguard pixels (padding)
@@ -302,7 +302,8 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
 
 
 
-def smcube(snrcube, header=None, fwhm=10*u.arcsec, vsm=None, edgech=None):
+def smcube(snrcube, header=None, fwhm=None, vsm=None, vsm_type='gauss',
+          edgech=None):
     """
     Smooth an SNRcube to produce a higher signal-to-noise SNRcube.
 
@@ -318,9 +319,17 @@ def smcube(snrcube, header=None, fwhm=10*u.arcsec, vsm=None, edgech=None):
         to be given in arcsec.
         Default: 10 arcsec
     vsm : float or :class:`~astropy.units.Quantity`, optional
-        Final velocity resolution to smooth to.  If not astropy quantity, assumed
-        to be given in km/s.
+        Full width of the spectral smoothing kernel (or FWHM if gaussian).  
+        If given as astropy quantity, should be given in velocity units.  
+        If not given as astropy quantity, interpreted as number of channels.
         Default: No spectral smoothing is applied.
+    vsm_type : string, optional
+        What type of spectral smoothing to employ.  Currently three options:
+        (1) 'boxcar' - 1D boxcar smoothing, vsm rounded to integer # of chans.
+        (2) 'gauss' - 1D gaussian smoothing, vsm is the convolving gaussian FWHM.
+        (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian FWHM
+        after convolution, assuming FWHM before convolution is 1 channel.        
+        Default: 'gauss'
     edgech : int, optional
         Number of channels at left and right edges of each spectrum to use 
         for rms estimation.
@@ -341,48 +350,79 @@ def smcube(snrcube, header=None, fwhm=10*u.arcsec, vsm=None, edgech=None):
         print(snrcube)
     
     # -- Spatial smoothing
-    # Requested final resolution
-    if not hasattr(fwhm, 'unit'):
-        fwhm = fwhm * u.arcsec
-    sm_beam = radio_beam.Beam(major=fwhm, minor=fwhm, pa=0*u.deg)
-    print('Convolving to', sm_beam)
-    # From convolve_to method in spectral_cube
-    pixscale = wcs.utils.proj_plane_pixel_area(snrcube.wcs.celestial)**0.5*u.deg
-    if hasattr(snrcube, 'beam'):
-        print('Existing', snrcube.beam)
-        convolution_kernel = sm_beam.deconvolve(snrcube.beam).as_kernel(pixscale)
+    if fwhm is not None:
+        # Requested final resolution
+        if not hasattr(fwhm, 'unit'):
+            fwhm = fwhm * u.arcsec
+        sm_beam = radio_beam.Beam(major=fwhm, minor=fwhm, pa=0*u.deg)
+        print('Convolving to', sm_beam)
+        # From convolve_to method in spectral_cube
+        pixscale = wcs.utils.proj_plane_pixel_area(snrcube.wcs.celestial)**0.5*u.deg
+        if hasattr(snrcube, 'beam'):
+            print('Existing', snrcube.beam)
+            convolution_kernel = sm_beam.deconvolve(snrcube.beam).as_kernel(pixscale)
+        else:
+            print('Warning: no existing beam found in input to smcube')
+            convolution_kernel = sm_beam.as_kernel(pixscale)
+        sm_snrcube = snrcube.spatial_smooth(convolution_kernel, convolve_fft, 
+                      fill_value=0.0, nan_treatment='fill', parallel=False)
     else:
-        print('Warning: no existing beam found in input to smcube')
-        convolution_kernel = sm_beam.as_kernel(pixscale)
-    sm_snrcube = snrcube.spatial_smooth(convolution_kernel, convolve_fft, 
-                  fill_value=0.0, nan_treatment='fill', parallel=False)
-#     sm_snrcube.write('sm_snrcube.fits.gz', overwrite=True)
+        sm_snrcube = snrcube
     
     # -- Spectral smoothing
     if vsm is not None:
-        current_resolution = hdr['CDELT3']/1000. * u.km/u.s
-        if hasattr(vsm, 'unit'):
-            target_resolution = vsm
-        else:
-            target_resolution = vsm * u.km/u.s
         fwhm_factor = np.sqrt(8*np.log(2))
-        if target_resolution > current_resolution:
-            gaussian_width = ((target_resolution**2 - current_resolution**2)**0.5 
-                              / current_resolution / fwhm_factor).value
-            print('Vel smooth kernel has stddev of {} channels'.format(gaussian_width))
-            kernel = Gaussian1DKernel(gaussian_width)
-            sm2_snrcube = sm_snrcube.spectral_smooth(kernel)
-            sm_snrcube = sm2_snrcube
+        if hasattr(vsm, 'unit'):
+            delta_v = abs(hdr['CDELT3']) * u.m/u.s
+            vsm_ch = (vsm/delta_v).decompose().value
         else:
-            print('ERROR: requested resolution of', target_resolution,
-                  'is less than current resolution of', current_resolution)
+            vsm_ch = vsm
+        if vsm_type == 'gauss':
+            gaussian_width = vsm_ch / fwhm_factor
+            kernel = Gaussian1DKernel(gaussian_width)
+            print('Gaussian smoothing with stddev:',gaussian_width,'channels')
+        elif vsm_type == 'boxcar':
+            box_width = round(vsm_ch)
+            kernel = Box1DKernel(box_width)
+            print('Boxcar smoothing with width:',box_width,'channels')
+        elif vsm_type == 'gaussfinal':
+            if vsm_ch > 1:
+                gaussian_width = (vsm_ch**2 - 1)**0.5 / fwhm_factor
+                kernel = Gaussian1DKernel(gaussian_width)
+                print('Gaussian smoothing with stddev:',gaussian_width,'channels')
+            else:
+                print('ERROR: requested resolution of',vsm_ch,'chans is less than 1')
+        sm2_snrcube = sm_snrcube.spectral_smooth(kernel)
+        sm_snrcube = sm2_snrcube
 
     # -- Renormalize by rms
     newrms = makenoise(sm_snrcube, edge=edgech)
-#     newrms.write('newrms.fits.gz', overwrite=True)
     sm_snrcube = sm_snrcube / newrms
-#     sm_snrcube.write('sm_snrcube2.fits.gz', overwrite=True)
     return sm_snrcube
+
+
+def writemom(imarray, filename='outfile', type='mom1', hdr=None):
+    """
+    Write out a moment map as a FITS file.
+
+    Parameters
+    ----------
+    imarray : SpectralCube or `~numpy.ndarray`
+        The 2D array with the moment map values
+    filename : string
+        The root of the file name
+    type : string
+        A label for the filename extension
+    hdr : `astropy.io.fits.Header`
+        The FITS header to write out
+    """
+    hdr['datamin'] = np.nanmin(imarray.value)
+    hdr['datamax'] = np.nanmax(imarray.value)
+    hdr['bunit'] = imarray.unit.to_string('fits')
+    fits.writeto(filename+'.'+type+'.fits.gz', imarray.astype(np.float32),
+                 hdr, overwrite=True)
+    print('Wrote', filename+'.'+type+'.fits.gz')
+    return
 
 
 def findflux(imcube, rmscube, mask=None):
@@ -408,16 +448,16 @@ def findflux(imcube, rmscube, mask=None):
     
     hd = imcube.header
     CDELT1, CDELT2 = hd['CDELT1']*u.deg, hd['CDELT2']*u.deg
-    # The beam area in pixels, used for conv to Jy and for correlated noise
+    # The beam area in pixels, used to convert to Jy and for correlated noise
     beamarea = (imcube.beam.sr).to(u.deg**2)/abs(CDELT1*CDELT2)
     vels = imcube.spectral_axis.to(u.km/u.s)
     delv = abs(vels[1]-vels[0])
 
     if mask is not None:
-        immask   = imcube.with_mask(mask > 0)
-        errmask  = rmscube.with_mask(mask > 0)
+        immask  = imcube.with_mask(mask > 0)
+        errmask = rmscube.with_mask(mask > 0)
     else:
-        immask = imcube
+        immask  = imcube
         errmask = rmscube
     specflux = np.nansum(immask.unitless_filled_data[:],axis=(1,2))
     totflux  = np.nansum(immask.unitless_filled_data[:]) * delv.value
@@ -444,22 +484,62 @@ def findflux(imcube, rmscube, mask=None):
     fluxtab['FluxErr'].unit = out_unit
     fluxtab['FluxErr'].format = '.4f'
     fluxtab['FluxErr'].description = 'Formal uncertainty in masked flux'
-
     return fluxtab
 
-# tb = image cube
-# nse = noise cube
-# vel = vchan broadcast to image cube
-# 
-# mom0  = np.nansum(tb, axis=0)
-# mom0_var = np.nansum( nse**2, axis=0 )
-# mom0_err = np.sqrt(mom0_var)
-# 
-# mom1  = np.nansum(tb*vel, axis=0) / mom0
-# mom1_var = np.nansum( ((vel - mom1)/mom0 * nse)**2, axis=0 )
-# mom1_err = np.sqrt(mom1_var)
-# 
-# mom2  = np.nansum(tb*(vel-mom1)**2, axis=0)/mom0
-# mom2_var = np.nansum( ((mom0*(vel-mom1)**2-np.nansum(tb*(vel-mom1)**2, axis=0))/mom0**2 * nse)**2 + (2*np.nansum(tb*(vel-mom1), axis=0)/mom0 * mom1_err)**2, axis=0 )
-# stdev = np.sqrt(mom2)
-# sderr = np.sqrt(mom2_var)/(2*stdev)
+
+def calc_moments(imcube, rmscube, mask=None):
+    """
+    Calculate moments of a masked cube and their errors
+
+    Parameters
+    ----------
+    imcube : SpectralCube
+        The image cube for which to calculate the moments and their errors.
+    rmscube : SpectralCube
+        A cube representing the noise estimate at each location in the image
+        cube.  Should have the same units as the image cube.
+    mask : `~numpy.ndarray`
+        A binary mask array (0s and 1s) to be applied before measuring the flux
+        and uncertainty.  This should NOT be a SpectralCube.
+
+    Returns
+    -------
+    altmom : `~numpy.ndarray`
+        A stack of the three moment maps.  These are generally redundant since
+        they were previously calculated by SpectralCube.
+    errmom : `~numpy.ndarray`
+        A stack of the three uncertainty maps.
+    """
+    
+    if mask is not None:
+        immask  = imcube.with_mask(mask > 0)
+        errmask = rmscube.with_mask(mask > 0)
+    else:
+        immask  = imcube
+        errmask = rmscube
+
+    tbarry   = immask.unitless_filled_data[:]
+    nsearry  = errmask.unitless_filled_data[:]
+    vels     = immask.spectral_axis.to(u.km/u.s)
+    vel3d    = np.expand_dims(vels, axis=(1, 2))
+    velarry  = np.broadcast_to(vel3d, immask.shape)
+    
+    mom0     = np.nansum( tbarry, axis=0 )
+    mom0_var = np.nansum( nsearry**2, axis=0 )
+    mom0_err = np.sqrt(mom0_var)
+
+    mom1     = np.nansum( tbarry * velarry, axis=0) / mom0
+    mom1_var = np.nansum( ((velarry - mom1)/mom0 * nsearry)**2, axis=0 )
+    mom1_err = np.sqrt(mom1_var)
+
+    mom2     = np.nansum( tbarry * (velarry-mom1)**2, axis=0) / mom0
+    mom2_var = np.nansum( ((mom0 * (velarry-mom1)**2 - np.nansum(tbarry*(velarry
+                    - mom1)**2, axis=0)) / mom0**2 * nsearry)**2 + (2*np.nansum(
+                    tbarry*(velarry-mom1), axis=0)/mom0 * mom1_err)**2, axis=0 )
+    stdev    = np.sqrt(mom2)
+    sderr    = np.sqrt(mom2_var)/(2*stdev)
+
+    altmom   = np.stack([mom0, mom1, stdev], axis=0)
+    errmom   = np.stack([mom0_err, mom1_err, sderr], axis=0)
+    return altmom, errmom
+

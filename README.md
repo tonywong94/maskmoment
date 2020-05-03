@@ -1,5 +1,5 @@
 # maskmoment
-Masked moments of radio data cubes, prototype version.
+Masked moments of radio data cubes, using a dilated masking approach.
 
 Based on idl_mommaps: https://github.com/tonywong94/idl_mommaps
 
@@ -15,8 +15,8 @@ and then call it using
 
     maskmoment(img_fits, *other parameters*)
 
-    Parameters
-    ----------
+    Main Parameters (see code for additional options)
+    -------------------------------------------------
     img_fits : FITS file name, required
         The image cube, this should be in units of K, Jy/beam, or equivalent.
     gain_fits : FITS file name, optional
@@ -53,6 +53,9 @@ and then call it using
     min_tot_ch : int, optional
         Dilated mask regions are required to span at least this many channels.
         Default: 2
+    min_tot_all : boolean, optional
+        Enforce min_tot_ch for all pixels instead of for regions as a whole.
+        Default: False
     nguard : tuple of two ints, optional
         Expand the final mask by this nguard[0] pixels in sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
@@ -68,16 +71,16 @@ and then call it using
         If value is not astropy quantity, assumed to be given in arcsec.
         Default: No spatial smoothing is applied.
     vsm : float or :class:`~astropy.units.Quantity`, optional
-        Width of the spectral smoothing kernel.  If given as astropy quantity,
-        should be given in velocity units.  If not given as astropy quantity, 
-        assumed to be given in *numbers of channels*.
+        Full width of the spectral smoothing kernel (or FWHM for gaussian).  
+        If given as astropy quantity, should be given in velocity units.  
+        If not given as astropy quantity, interpreted as number of channels.
         Default: No spectral smoothing is applied.
     vsm_type : string, optional
         What type of spectral smoothing to employ.  Currently three options:
-        (1) 'boxcar' - 1D boxcar smoothing, vsm rounded to integer no. of chans.
-        (2) 'gauss' - 1D gaussian smoothing, vsm is the convolving gaussian sigma.
-        (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian sigma
-        after convolution, assuming sigma before convolution is 1 channel width.        
+        (1) 'boxcar' - 1D boxcar smoothing, vsm rounded to integer # of chans.
+        (2) 'gauss' - 1D gaussian smoothing, vsm is the convolving gaussian FWHM.
+        (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian FWHM
+        after convolution, assuming FWHM before convolution is 1 channel.        
         Default: 'gauss'
     output_snr_cube : boolean, optional
         Output the cube is SNR units in addition to the moment maps.

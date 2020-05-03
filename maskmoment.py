@@ -87,7 +87,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         Minimum number of unmasked channels needed to calculate moment-2.
         Default: 2
     output_snr_cube : boolean, optional
-        Output the cube is SNR units in addition to the moment maps.
+        Output the cube in SNR units in addition to the moment maps.
         Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
@@ -195,8 +195,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     writemom(dil_mskcub_mom0, type='mom0', filename=pth+basename, hdr=hd2d)
     # --- Moment 1: mean velocity must be in range of cube
     dil_mskcub_mom1 = dil_mskcub.moment(order=1).to(u.km/u.s)
-    dil_mskcub_mom1[dil_mskcub_mom1 < dil_mskcub.spectral_extrema[0]] = np.nan
-    dil_mskcub_mom1[dil_mskcub_mom1 > dil_mskcub.spectral_extrema[1]] = np.nan
+    vmin = dil_mskcub.spectral_extrema[0]
+    vmax = dil_mskcub.spectral_extrema[1]
+    dil_mskcub_mom1[dil_mskcub_mom1 < vmin] = np.nan
+    dil_mskcub_mom1[dil_mskcub_mom1 > vmax] = np.nan
     dil_mskcub_mom1[nchanimg < mom1_chmin] = np.nan
     writemom(dil_mskcub_mom1, type='mom1', filename=pth+basename, hdr=hd2d)
     # --- Moment 2: require at least 2 unmasked channels at each pixel
@@ -211,8 +213,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     errmom0[nchanimg == 0] = np.nan
     writemom(errmom0, type='emom0', filename=pth+basename, hdr=hd2d)
     errmom1 = errmom[1] * u.km/u.s
-    errmom1[dil_mskcub_mom1 < dil_mskcub.spectral_extrema[0]] = np.nan
-    errmom1[dil_mskcub_mom1 > dil_mskcub.spectral_extrema[1]] = np.nan
+    errmom1[dil_mskcub_mom1 < vmin] = np.nan
+    errmom1[dil_mskcub_mom1 > vmax] = np.nan
     errmom1[nchanimg < mom1_chmin] = np.nan
     writemom(errmom1, type='emom1', filename=pth+basename, hdr=hd2d)
     errmom2 = errmom[2] * u.km/u.s

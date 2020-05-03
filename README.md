@@ -80,10 +80,10 @@ and then call it using
         (1) 'boxcar' - 1D boxcar smoothing, vsm rounded to integer # of chans.
         (2) 'gauss' - 1D gaussian smoothing, vsm is the convolving gaussian FWHM.
         (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian FWHM
-        after convolution, assuming FWHM before convolution is 1 channel.        
+            after convolution, assuming FWHM before convolution is 1 channel.        
         Default: 'gauss'
     output_snr_cube : boolean, optional
-        Output the cube is SNR units in addition to the moment maps.
+        Output the cube in SNR units in addition to the moment maps.
         Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.

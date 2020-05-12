@@ -1,15 +1,17 @@
-import numpy as np
 import os
+import numpy as np
 from spectral_cube import SpectralCube
 from astropy.io import fits
 from astropy import units as u
+from astropy import wcs
 from momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
 
-def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=None, 
-                snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, min_tot_ch=2, 
-                min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, vsm=None, 
-                vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, output_snr_cube=False, 
-                to_kelvin=True, altoutput=False):
+
+def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir=None, 
+                outname=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, 
+                min_tot_ch=2, min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, 
+                vsm=None, vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, altoutput=False, 
+                output_snr_cube=False, to_kelvin=True, huge_operations=True):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -27,6 +29,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         This should have the same dimensions and units as the image cube.
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
+    mask_fits : FITS file name, optional
+        External mask cube to use.  The cube should have 1's for valid pixels 
+        and 0's for excluded pixels.  If this is provided then the mask generation
+        is skipped and the program goes straight to calculating the moments.
     outdir : string, optional
         Directory to write the output files.
         Default: Write to the directory where img_fits resides.
@@ -96,6 +102,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
         Also output moment maps from a "direct" calculation instead of
         the moment method in spectral_cube.  Mainly used for debugging.
         Default: False
+    huge_operations : boolean, optional
+        Allow huge operations in spectral_cube.
+        Default: True
     """
     np.seterr(divide='ignore', invalid='ignore')
     #
@@ -117,77 +126,96 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     # --- READ INPUT FILES, OUTPUT NOISE CUBE IF NEWLY GENERATED
     #
     image_cube = SpectralCube.read(img_fits)
-    hdr = image_cube.header
-    savehd = hdr.copy()
-    has_jypbeam = all(x in (savehd['bunit']).upper() for x in ['JY', 'B'])
+    hd3d = image_cube.header
+    hd2d = hd3d.copy()
+    hd2d['WCSAXES'] = 2
+    for key in ['CRVAL3', 'CTYPE3', 'CRPIX3', 'CDELT3', 'CUNIT3']:
+        del hd2d[key]
+    has_jypbeam = all(x in (hd3d['bunit']).upper() for x in ['JY', 'B'])
     print('Image cube '+img_fits+':\n',image_cube)
     if rms_fits is not None:
         rms_cube = SpectralCube.read(rms_fits)
-        print('Noise cube '+rms_fits+':\n',rms_cube)
         if rms_cube.unit != image_cube.unit:
             raise RuntimeError('Noise cube units', rms_cube.unit, 
                                'differ from image units', image_cube.unit)
-    elif gain_fits is not None:
-        gain_cube  = SpectralCube.read(gain_fits)
-        print('Gain cube '+gain_fits+':\n',gain_cube)
-        rms_cube = makenoise(image_cube, gain_cube, edge=edgech)
+        if rms_cube.shape[0] == 1:
+            rmsarray = np.broadcast_to(rms_cube, image_cube.shape)
+            unit = rms_cube.unit
+            rms_cube = SpectralCube(data=rmsarray*unit, header=hd3d, wcs=wcs.WCS(hd3d))
+        print('Noise cube '+rms_fits+':\n',rms_cube)
+    else:
+        if gain_fits is not None:
+            gain_cube  = SpectralCube.read(gain_fits)
+            print('Gain cube '+gain_fits+':\n',gain_cube)
+            rms_cube = makenoise(image_cube, gain_cube, edge=edgech)
+        else:
+            rms_cube = makenoise(image_cube, edge=edgech, perpixel=True)
         print('Noise cube:\n',rms_cube)
-        hdr['datamin'] = np.nanmin(rms_cube)
-        hdr['datamax'] = np.nanmax(rms_cube)
+        hd3d['datamin'] = np.nanmin(rms_cube)
+        hd3d['datamax'] = np.nanmax(rms_cube)
         fits.writeto(pth+basename+'.ecube.fits.gz', rms_cube._data.astype(np.float32),
-                 hdr, overwrite=True)
+                 hd3d, overwrite=True)
         print('Wrote', pth+basename+'.ecube.fits.gz')
     #
     # --- GENERATE AND OUTPUT SNR CUBE, PEAK SNR IMAGE
     #
-    snr_cube = image_cube / rms_cube
-    print('\nSNR cube:\n',snr_cube)
-    if output_snr_cube:
-        hdr['datamin'] = snr_cube.min().value
-        hdr['datamax'] = snr_cube.max().value
-        hdr['bunit'] = ' '
-        fits.writeto(pth+basename+'.snrcube.fits.gz', snr_cube._data.astype(np.float32),
-                     hdr, overwrite=True)
-        print('Wrote', pth+basename+'.snrcube.fits.gz')    
-    snr_peak = snr_cube.max(axis=0)
-    hd2d = hdr.copy()
-    hd2d['datamin'] = np.nanmin(snr_peak.value)
-    hd2d['datamax'] = np.nanmax(snr_peak.value)
-    hd2d['bunit'] = ' '
-    fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
-                 hd2d, overwrite=True)
-    print('Wrote', pth+basename+'.snrpk.fits.gz')
-    #
-    # --- GENERATE AND OUTPUT DILATED MASK
-    #
-    if fwhm is not None or vsm is not None:
-        sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, vsm_type=vsm_type, edgech=edgech)
-        print('Smoothed SNR cube:\n', sm_snrcube)
-        dilcube = sm_snrcube
+    if mask_fits is not None:
+        dilatedmask = fits.getdata(mask_fits)
     else:
-        dilcube = snr_cube
-    dilatedmask = dilmsk(dilcube, header=hdr, snr_hi=snr_hi, snr_lo=snr_lo, 
-                         min_thresh_ch=min_thresh_ch, min_tot_ch=min_tot_ch, 
-                         min_tot_all=min_tot_all, nguard=nguard, minbeam=minbeam)
-    hdr['datamin'] = 0
-    hdr['datamax'] = 1
-    hdr['bunit'] = ' '
-    fits.writeto(pth+basename+'.mask.fits.gz', dilatedmask.astype(np.float32),
-                 hdr, overwrite=True)
-    print('Wrote', pth+basename+'.mask.fits.gz')
-    nchanimg = np.sum(dilatedmask, axis=0)
+        if huge_operations:
+            image_cube.allow_huge_operations = True
+            rms_cube.allow_huge_operations = True
+        snr_cube = image_cube / rms_cube
+        print('\nSNR cube:\n',snr_cube)
+        if output_snr_cube:
+            hd3d['datamin'] = snr_cube.min().value
+            hd3d['datamax'] = snr_cube.max().value
+            hd3d['bunit'] = ' '
+            fits.writeto(pth+basename+'.snrcube.fits.gz', snr_cube._data.astype(np.float32),
+                         hd3d, overwrite=True)
+            print('Wrote', pth+basename+'.snrcube.fits.gz')    
+        snr_peak = snr_cube.max(axis=0)
+        hd2d['datamin'] = np.nanmin(snr_peak.value)
+        hd2d['datamax'] = np.nanmax(snr_peak.value)
+        hd2d['bunit'] = ' '
+        fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
+                     hd2d, overwrite=True)
+        print('Wrote', pth+basename+'.snrpk.fits.gz')
+        #
+        # --- GENERATE AND OUTPUT DILATED MASK
+        #
+        if fwhm is not None or vsm is not None:
+            sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, vsm_type=vsm_type, 
+                                edgech=edgech)
+            print('Smoothed SNR cube:\n', sm_snrcube)
+            dilcube = sm_snrcube
+        else:
+            dilcube = snr_cube
+        dilatedmask = dilmsk(dilcube, header=hd3d, snr_hi=snr_hi, snr_lo=snr_lo, 
+                             min_thresh_ch=min_thresh_ch, min_tot_ch=min_tot_ch, 
+                             min_tot_all=min_tot_all, nguard=nguard, minbeam=minbeam)
+        hd3d['datamin'] = 0
+        hd3d['datamax'] = 1
+        hd3d['bunit'] = ' '
+        fits.writeto(pth+basename+'.mask.fits.gz', dilatedmask.astype(np.float32),
+                     hd3d, overwrite=True)
+        print('Wrote', pth+basename+'.mask.fits.gz')
     #
-    # --- GENERATE AND OUTPUT MOMEMT MAPS
+    # --- GENERATE AND OUTPUT MOMENT MAPS
     #
     dil_mskcub = image_cube.with_mask(dilatedmask > 0)
-    rms_mskcub = rms_cube.with_mask(dilatedmask > 0)
+    nchanimg = np.sum(dilatedmask, axis=0)
     print('Units of cube are', dil_mskcub.unit)
-    if to_kelvin:
+    if to_kelvin and has_jypbeam:
+        if huge_operations:
+            dil_mskcub.allow_huge_operations = True
         dil_mskcub_k = dil_mskcub.to(u.K)
         dil_mskcub = dil_mskcub_k
         dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.K*u.km/u.s)
     elif has_jypbeam:  # keep Jy/bm but use km/s
         dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.Jy/u.beam*u.km/u.s)
+    elif to_kelvin:    # keep K but use km/s
+        dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.K*u.km/u.s)
     else:
         dil_mskcub_mom0 = dil_mskcub.moment(order=0)
     if hasattr(dil_mskcub_mom0, 'unit'):
@@ -209,7 +237,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     # --- CALCULATE ERRORS IN MOMENTS
     #
     altmom, errmom = calc_moments(image_cube, rms_cube, dilatedmask)
-    errmom0 = errmom[0] * abs(savehd['CDELT3'])/1000 * dil_mskcub_mom0.unit
+    errmom0 = errmom[0] * abs(hd3d['CDELT3'])/1000 * dil_mskcub_mom0.unit
     errmom0[nchanimg == 0] = np.nan
     writemom(errmom0, type='emom0', filename=pth+basename, hdr=hd2d)
     errmom1 = errmom[1] * u.km/u.s
@@ -221,7 +249,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, outdir=None, outname=Non
     errmom2[nchanimg < mom2_chmin] = np.nan
     writemom(errmom2, type='emom2', filename=pth+basename, hdr=hd2d)
     if altoutput:
-        altmom0 = altmom[0] * abs(savehd['CDELT3'])/1000 * dil_mskcub_mom0.unit 
+        altmom0 = altmom[0] * abs(hd3d['CDELT3'])/1000 * dil_mskcub_mom0.unit 
         altmom0[nchanimg == 0] = np.nan
         altmom1 = altmom[1] * u.km/u.s
         altmom1[altmom1 < vmin] = np.nan

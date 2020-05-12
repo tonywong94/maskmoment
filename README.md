@@ -30,6 +30,10 @@ and then call it using
         This should have the same dimensions and units as the image cube.
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
+    mask_fits : FITS file name, optional
+        External mask cube to use.  The cube should have 1's for valid pixels 
+        and 0's for excluded pixels.  If this is provided then the mask generation
+        is skipped and the program goes straight to calculating the moments.
     outdir : string, optional
         Directory to write the output files
         Default: Same directory as img_fits.

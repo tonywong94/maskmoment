@@ -80,7 +80,7 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
                 slc = np.r_[0:edge,cubearray.shape[0]-edge:cubearray.shape[0]]
                 rms = mad_std(imflat[slc,:,:], axis=doax, ignore_nan=True)
         noisearray = np.broadcast_to(rms/gainarray, cubearray.shape)
-    print('Found rms value of', rms)
+    print('Found rms value of {:.3f}'.format(rms))
     if spcube:
         if unit != '':
             noisecube = SpectralCube(data=noisearray*unit, header=hdr, wcs=wcs.WCS(hdr))
@@ -250,7 +250,7 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
     bmarea = ( 2*np.pi/(8*np.log(2)) * snrcube.beam.major.value * 
               snrcube.beam.minor.value / (hdr['cdelt2'])**2 )
     minarea = minbeam * bmarea
-    print('Minimum area is {} pixels'.format(minarea))
+    print('Minimum area is {:.1f} pixels'.format(minarea))
     # High significance mask
     thresh_mask = (snrcube._data > snr_hi)
     # Low significance mask

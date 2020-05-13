@@ -7,11 +7,12 @@ from astropy import wcs
 from momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
 
 
-def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir=None, 
+def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='', 
                 outname=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, 
                 min_tot_ch=2, min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, 
                 vsm=None, vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, altoutput=False, 
-                output_snr_cube=False, to_kelvin=True, huge_operations=True):
+                output_snr_cube=False, output_2d_mask=False, to_kelvin=True, 
+                huge_operations=True):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -95,6 +96,11 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir=N
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
         Default: False
+    output_2d_mask : boolean, optional
+        Output the projected 2-D mask as well as the newly generated mask.
+        The projected mask at a given pixel is valid at all channels as
+        long as the parent mask is valid for any channel.
+        Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
         Default: True
@@ -110,10 +116,14 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir=N
     #
     # --- DETERMINE OUTPUT FILE NAMES
     #
-    if outdir is not None:
-        pth = outdir+'/'
+    if outdir != '':
+        pth = outdir + '/'
     else:
-        pth = os.path.dirname(img_fits)+'/'
+        img_dir = os.path.dirname(img_fits)
+        if img_dir == '':
+            pth = './'
+        else:
+            pth = img_dir + '/'
     if outname is not None:
         basename = outname
     else:
@@ -200,6 +210,12 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir=N
         fits.writeto(pth+basename+'.mask.fits.gz', dilatedmask.astype(np.float32),
                      hd3d, overwrite=True)
         print('Wrote', pth+basename+'.mask.fits.gz')
+        if output_2d_mask:
+            summed_msk = np.broadcast_to(np.sum(dilatedmask, axis=0), image_cube.shape)
+            proj_msk = np.minimum(summed_msk, 1)
+            fits.writeto(pth+basename+'.mask2d.fits.gz', proj_msk.astype(np.float32),
+                         hd3d, overwrite=True)
+            print('Wrote', pth+basename+'.mask2d.fits.gz')
     #
     # --- GENERATE AND OUTPUT MOMENT MAPS
     #

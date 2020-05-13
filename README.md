@@ -90,6 +90,11 @@ and then call it using
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
         Default: False
+    output_2d_mask : boolean, optional
+        Output the projected 2-D mask as well as the newly generated mask.
+        The projected mask at a given pixel is valid at all channels as
+        long as the parent mask is valid for any channel.
+        Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
         Default: True

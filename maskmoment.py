@@ -12,7 +12,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
                 min_tot_ch=2, min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, 
                 vsm=None, vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, altoutput=False, 
                 output_snr_cube=False, output_2d_mask=False, to_kelvin=True, 
-                huge_operations=True):
+                huge_operations=True, perpixel=False):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -93,6 +93,11 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     mom2_chmin : int, optional
         Minimum number of unmasked channels needed to calculate moment-2.
         Default: 2
+    perpixel : boolean, optional
+        Whether to calculate the rms per pixel instead of over whole image.
+        Set to True if you know there is a sensitivity variation across the image
+        but you don't have a gain cube.  Only used if rms_fits and gain_fits unset.
+        Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
         Default: False
@@ -127,10 +132,11 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     if outname is not None:
         basename = outname
     else:
-        if img_fits.endswith('.fits.gz'):
-            basename = os.path.splitext(os.path.splitext(img_fits)[0])[0]
+        basename = os.path.basename(img_fits)
+        if basename.endswith('.fits.gz'):
+            basename = os.path.splitext(os.path.splitext(basename)[0])[0]
         else:
-            basename = os.path.splitext(img_fits)[0]
+            basename = os.path.splitext(basename)[0]
     print('\nOutput basename is:',basename)
     #
     # --- READ INPUT FILES, OUTPUT NOISE CUBE IF NEWLY GENERATED
@@ -159,7 +165,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
             print('Gain cube '+gain_fits+':\n',gain_cube)
             rms_cube = makenoise(image_cube, gain_cube, edge=edgech)
         else:
-            rms_cube = makenoise(image_cube, edge=edgech, perpixel=True)
+            rms_cube = makenoise(image_cube, edge=edgech, perpixel=perpixel)
         print('Noise cube:\n',rms_cube)
         hd3d['datamin'] = np.nanmin(rms_cube)
         hd3d['datamax'] = np.nanmax(rms_cube)

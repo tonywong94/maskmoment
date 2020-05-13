@@ -80,12 +80,12 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
                 slc = np.r_[0:edge,cubearray.shape[0]-edge:cubearray.shape[0]]
                 rms = mad_std(imflat[slc,:,:], axis=doax, ignore_nan=True)
         noisearray = np.broadcast_to(rms/gainarray, cubearray.shape)
-    print('Found rms value of {:.3f}'.format(rms))
+    if perpixel==False:
+        print('Found rms value of {:.3f}'.format(rms))
     if spcube:
-        if unit != '':
+        if unit != '' and hasattr(noisearray, 'unit')==False:
             noisecube = SpectralCube(data=noisearray*unit, header=hdr, wcs=wcs.WCS(hdr))
         else:
-            print('Noise cube has no units')
             noisecube = SpectralCube(data=noisearray, header=hdr, wcs=wcs.WCS(hdr))
         return noisecube
     else:
@@ -416,12 +416,15 @@ def writemom(imarray, filename='outfile', type='mom1', hdr=None):
     hdr : `astropy.io.fits.Header`
         The FITS header to write out
     """
-    hdr['datamin'] = np.nanmin(imarray.value)
-    hdr['datamax'] = np.nanmax(imarray.value)
-    hdr['bunit'] = imarray.unit.to_string('fits')
-    fits.writeto(filename+'.'+type+'.fits.gz', imarray.astype(np.float32),
-                 hdr, overwrite=True)
-    print('Wrote', filename+'.'+type+'.fits.gz')
+    if np.any(~np.isnan(imarray)):
+        hdr['datamin'] = np.nanmin(imarray.value)
+        hdr['datamax'] = np.nanmax(imarray.value)
+        hdr['bunit'] = imarray.unit.to_string('fits')
+        fits.writeto(filename+'.'+type+'.fits.gz', imarray.astype(np.float32),
+                     hdr, overwrite=True)
+        print('Wrote', filename+'.'+type+'.fits.gz')
+    else:
+        print('Skipping',type,'because image is all NaN')
     return
 
 

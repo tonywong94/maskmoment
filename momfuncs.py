@@ -81,7 +81,7 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
                 rms = mad_std(imflat[slc,:,:], axis=doax, ignore_nan=True)
         noisearray = np.broadcast_to(rms/gainarray, cubearray.shape)
     if perpixel==False:
-        print('Found rms value of {:.3f}'.format(rms))
+        print('Found rms value of {:.4f}'.format(rms))
     if spcube:
         if unit != '' and hasattr(noisearray, 'unit')==False:
             noisecube = SpectralCube(data=noisearray*unit, header=hdr, wcs=wcs.WCS(hdr))
@@ -428,7 +428,7 @@ def writemom(imarray, filename='outfile', type='mom1', hdr=None):
     return
 
 
-def findflux(imcube, rmscube, mask=None):
+def findflux(imcube, rmscube, mask=None, projmask=None):
     """
     Calculate integrated spectrum and total integrated flux.
 
@@ -442,6 +442,9 @@ def findflux(imcube, rmscube, mask=None):
     mask : `~numpy.ndarray`
         A binary mask array (0s and 1s) to be applied before measuring the flux
         and uncertainty.  This should NOT be a SpectralCube.
+    projmask : `~numpy.ndarray`
+        A second mask array within which to measure the flux and uncertainty.  
+        This is normally the 2-D projected mask.
 
     Returns
     -------
@@ -459,34 +462,62 @@ def findflux(imcube, rmscube, mask=None):
     if mask is not None:
         immask  = imcube.with_mask(mask > 0)
         errmask = rmscube.with_mask(mask > 0)
+        allcubes = [immask, errmask]
+        if projmask is not None:
+            immask2 = imcube.with_mask(projmask > 0)
+            errmask2 = rmscube.with_mask(projmask > 0)
+            allcubes.extend([immask2, errmask2])
     else:
         immask  = imcube
         errmask = rmscube
-    specflux = np.nansum(immask.unitless_filled_data[:],axis=(1,2))
-    totflux  = np.nansum(immask.unitless_filled_data[:]) * delv.value
-    specvar  = np.nansum(errmask.unitless_filled_data[:]**2,axis=(1,2))
-    totvar   = np.nansum(errmask.unitless_filled_data[:]**2)
-    specerr  = np.sqrt(specvar*beamarea)
-    toterr   = np.sqrt(totvar*beamarea) * delv.value
+        allcubes = [immask, errmask]
+
+    e_spec = []
+    e_tot  = []
+    f_spec = []
+    f_tot  = []
+    for i, spcube in enumerate(allcubes):
+        if i % 2 == 1:
+            var_spec = np.nansum(spcube.unitless_filled_data[:]**2,axis=(1,2))
+            var_tot  = np.nansum(spcube.unitless_filled_data[:]**2)
+            e_spec.append(np.sqrt(var_spec*beamarea))
+            e_tot.append( np.sqrt(var_tot*beamarea) * delv.value)
+        else:
+            f_spec.append(np.nansum(spcube.unitless_filled_data[:],axis=(1,2)))
+            f_tot.append( np.nansum(spcube.unitless_filled_data[:]) * delv.value)
 
     if imcube.unit == 'Jy / beam':
-        specflux = specflux/beamarea
-        specerr  = specerr/beamarea
-        totflux  = totflux/beamarea
-        toterr   = toterr/beamarea
+        scl = beamarea
         out_unit = u.Jy
     else:
+        scl = 1
         out_unit = imcube.unit * u.pix
 
-    fluxtab = Table([vels, specflux, specerr], names=('Velocity', 'Flux', 'FluxErr'))
-    fluxtab.meta['totflux'] = "{:.2f} +/- {:.2f}".format(totflux,toterr)+' '+out_unit.to_string()+' km/s'
+    if len(f_spec) == 1:
+        fluxtab = Table([vels, f_spec[0]/scl, e_spec[0]/scl], 
+                        names=('Velocity', 'Flux', 'FluxErr'))
+    else:
+        fluxtab = Table([vels, f_spec[0]/scl, e_spec[0]/scl, f_spec[1]/scl, e_spec[1]/scl], 
+                        names=('Velocity', 'Flux', 'FluxErr', 'Flux2d', 'Flux2dErr'))
+    fluxtab.meta['totflux'] = "{:.2f} +/- {:.2f}".format(
+                f_tot[0]/scl,e_tot[0]/scl)+' '+out_unit.to_string()+' km/s'
     fluxtab['Velocity'].description = 'Velocity, ' + hd['ctype3'] + ', ' + hd['specsys']
+    fluxtab['Velocity'].format = '.3f'
     fluxtab['Flux'].unit = out_unit
     fluxtab['Flux'].format = '.4f'
     fluxtab['Flux'].description = 'Flux after masking'
     fluxtab['FluxErr'].unit = out_unit
     fluxtab['FluxErr'].format = '.4f'
     fluxtab['FluxErr'].description = 'Formal uncertainty in masked flux'
+    if len(f_tot) == 2:
+        fluxtab.meta['tot2dflux'] = "{:.2f} +/- {:.2f}".format(
+                f_tot[1]/scl,e_tot[1]/scl)+' '+out_unit.to_string()+' km/s'
+        fluxtab['Flux2d'].unit = out_unit
+        fluxtab['Flux2d'].format = '.4f'
+        fluxtab['Flux2d'].description = 'Flux after masking in 2D'
+        fluxtab['Flux2dErr'].unit = out_unit
+        fluxtab['Flux2dErr'].format = '.4f'
+        fluxtab['Flux2dErr'].description = 'Formal uncertainty in 2D masked flux'
     return fluxtab
 
 
@@ -541,6 +572,10 @@ def calc_moments(imcube, rmscube, mask=None):
                     tbarry*(velarry-mom1), axis=0)/mom0 * mom1_err)**2, axis=0 )
     stdev    = np.sqrt(mom2)
     sderr    = np.sqrt(mom2_var)/(2*stdev)
+    
+    for x in [mom1, stdev, mom1_err, sderr]:
+        x[x == np.inf] = np.nan
+        x[x == -np.inf] = np.nan
 
     altmom   = np.stack([mom0, mom1, stdev], axis=0)
     errmom   = np.stack([mom0_err, mom1_err, sderr], axis=0)

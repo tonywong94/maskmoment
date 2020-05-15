@@ -103,7 +103,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Default: False
     output_2d_mask : boolean, optional
         Output the projected 2-D mask as well as the newly generated mask.
-        The projected mask at a given pixel is valid at all channels as
+        The projected mask at a given pixel is valid for all channels as
         long as the parent mask is valid for any channel.
         Default: False
     to_kelvin : boolean, optional
@@ -167,8 +167,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         else:
             rms_cube = makenoise(image_cube, edge=edgech, perpixel=perpixel)
         print('Noise cube:\n',rms_cube)
-        hd3d['datamin'] = np.nanmin(rms_cube)
-        hd3d['datamax'] = np.nanmax(rms_cube)
+        hd3d['datamin'] = np.nanmin(rms_cube._data[0])
+        hd3d['datamax'] = np.nanmax(rms_cube._data[0])
         fits.writeto(pth+basename+'.ecube.fits.gz', rms_cube._data.astype(np.float32),
                  hd3d, overwrite=True)
         print('Wrote', pth+basename+'.ecube.fits.gz')
@@ -285,7 +285,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     #
     # --- CALCULATE FLUXES
     #
-    fluxtab = findflux(image_cube, rms_cube, dilatedmask)
+    if mask_fits is None and output_2d_mask:
+        fluxtab = findflux(image_cube, rms_cube, dilatedmask, proj_msk)
+    else:
+        fluxtab = findflux(image_cube, rms_cube, dilatedmask)
     fluxtab.write(pth+basename+'.flux.csv', delimiter=',', format='ascii.ecsv', 
                   overwrite=True)
     print('Wrote', pth+basename+'.flux.csv')

@@ -182,7 +182,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
             image_cube.allow_huge_operations = True
             rms_cube.allow_huge_operations = True
         snr_cube = image_cube / rms_cube
-        print('\nSNR cube:\n',snr_cube)
+        print('SNR cube:\n',snr_cube)
         if output_snr_cube:
             hd3d['datamin'] = snr_cube.min().value
             hd3d['datamax'] = snr_cube.max().value

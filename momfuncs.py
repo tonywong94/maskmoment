@@ -79,7 +79,9 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
             else:  # take only edge channels for estimating rms
                 slc = np.r_[0:edge,cubearray.shape[0]-edge:cubearray.shape[0]]
                 rms = mad_std(imflat[slc,:,:], axis=doax, ignore_nan=True)
-        noisearray = np.broadcast_to(rms/gainarray, cubearray.shape)
+        noisearray = np.broadcast_to(rms/gainarray, cubearray.shape).copy()
+        # Added 21may2020 to match masks of noise and image cubes
+        noisearray[np.isnan(cubearray)] = np.nan
     if perpixel==False:
         print('Found rms value of {:.4f}'.format(rms))
     if spcube:
@@ -455,7 +457,7 @@ def findflux(imcube, rmscube, mask=None, projmask=None):
     hd = imcube.header
     CDELT1, CDELT2 = hd['CDELT1']*u.deg, hd['CDELT2']*u.deg
     # The beam area in pixels, used to convert to Jy and for correlated noise
-    beamarea = (imcube.beam.sr).to(u.deg**2)/abs(CDELT1*CDELT2)
+    beamarea = ((imcube.beam.sr).to(u.deg**2)/abs(CDELT1*CDELT2)).value
     vels = imcube.spectral_axis.to(u.km/u.s)
     delv = abs(vels[1]-vels[0])
 

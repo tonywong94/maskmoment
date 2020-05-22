@@ -87,12 +87,17 @@ and then call it using
         (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian FWHM
             after convolution, assuming FWHM before convolution is 1 channel.        
         Default: 'gauss'
+    perpixel : boolean, optional
+        Whether to calculate the rms per pixel instead of over whole image.
+        Use True if you know there is a sensitivity variation across the image
+        but you don't have a gain cube.  Must have rms_fits and gain_fits unset.
+        Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
         Default: False
     output_2d_mask : boolean, optional
         Output the projected 2-D mask as well as the newly generated mask.
-        The projected mask at a given pixel is valid at all channels as
+        The projected mask at a given pixel is valid for all channels as
         long as the parent mask is valid for any channel.
         Default: False
     to_kelvin : boolean, optional

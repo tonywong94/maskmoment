@@ -31,7 +31,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
     mask_fits : FITS file name, optional
-        External mask cube to use.  The cube should have 1's for valid pixels 
+        External mask cube to use.  This cube should have 1's for valid pixels 
         and 0's for excluded pixels.  If this is provided then the mask generation
         is skipped and the program goes straight to calculating the moments.
     outdir : string, optional
@@ -59,21 +59,21 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Dilated mask regions are required to span at least this many channels.
         Default: 2
     min_tot_all : boolean, optional
-        Enforce min_tot_ch for all pixels instead of for regions as a whole.
+        Enforce min_tot_ch for individual pixels rather than regions as a whole.
         Default: False
     nguard : tuple of two ints, optional
-        Expand the final mask by this nguard[0] pixels in sky directions and
+        Expand the final mask by nguard[0] pixels in the sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
         if both are non-zero.
         If nguard[0] = 0 then no expansion is done in sky coordinates.
         If nguard[1] = 0 then no expansion is done in velocity.
         Default: [0,0]
     edgech : int, optional
-        Number of channels at each end of cube to use for rms estimation.
+        Number of channels at each end of vel axis to use for rms estimation.
         Default: 5
     fwhm : float or :class:`~astropy.units.Quantity`, optional
         Spatial resolution to smooth to before generating the dilated mask.  
-        If value is not astropy quantity, assumed to be given in arcsec.
+        If value is not an astropy quantity, assumed to be given in arcsec.
         Default: No spatial smoothing is applied.
     vsm : float or :class:`~astropy.units.Quantity`, optional
         Full width of the spectral smoothing kernel (or FWHM for gaussian).  
@@ -94,9 +94,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Minimum number of unmasked channels needed to calculate moment-2.
         Default: 2
     perpixel : boolean, optional
-        Whether to calculate the rms per pixel instead of over whole image.
+        Whether to calculate the rms per XY pixel instead of over whole image.
         Set to True if you know there is a sensitivity variation across the image
-        but you don't have a gain cube.  Only used if rms_fits and gain_fits unset.
+        but you don't have a gain cube - requires rms_fits and gain_fits unset.
         Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.

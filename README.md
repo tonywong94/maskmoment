@@ -31,22 +31,22 @@ and then call it using
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
     mask_fits : FITS file name, optional
-        External mask cube to use.  The cube should have 1's for valid pixels 
+        External mask cube to use.  This cube should have 1's for valid pixels 
         and 0's for excluded pixels.  If this is provided then the mask generation
         is skipped and the program goes straight to calculating the moments.
     outdir : string, optional
-        Directory to write the output files
-        Default: Same directory as img_fits.
+        Directory to write the output files.
+        Default: Write to the directory where img_fits resides.
         NOTE: Currently this directory is assumed to exist.
     outname : string, optional
         Basname for output files.  For instance, outname='foo' produces files
         'foo.mom0.fits.gz', etc.
         Default: Based on root name of img_fits.
     snr_hi : float, optional
-        The high significance threshold from which to begin the mask dilation.
+        The high significance sigma threshold from which to begin mask dilation.
         Default: 4
     snr_lo : float, optional
-        The low significance threshold at which to end the mask dilation.
+        The low significance sigma threshold at which to end mask dilation.
         Default: 2
     minbeam : float, optional
         Minimum velocity-integrated area of a mask region in units of the beam size.
@@ -59,21 +59,21 @@ and then call it using
         Dilated mask regions are required to span at least this many channels.
         Default: 2
     min_tot_all : boolean, optional
-        Enforce min_tot_ch for all pixels instead of for regions as a whole.
+        Enforce min_tot_ch for individual pixels rather than regions as a whole.
         Default: False
     nguard : tuple of two ints, optional
-        Expand the final mask by this nguard[0] pixels in sky directions and
+        Expand the final mask by nguard[0] pixels in the sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
         if both are non-zero.
         If nguard[0] = 0 then no expansion is done in sky coordinates.
         If nguard[1] = 0 then no expansion is done in velocity.
         Default: [0,0]
     edgech : int, optional
-        Number of channels at each end of cube to use for rms estimation.
+        Number of channels at each end of vel axis to use for rms estimation.
         Default: 5
     fwhm : float or :class:`~astropy.units.Quantity`, optional
         Spatial resolution to smooth to before generating the dilated mask.  
-        If value is not astropy quantity, assumed to be given in arcsec.
+        If value is not an astropy quantity, assumed to be given in arcsec.
         Default: No spatial smoothing is applied.
     vsm : float or :class:`~astropy.units.Quantity`, optional
         Full width of the spectral smoothing kernel (or FWHM for gaussian).  
@@ -88,9 +88,9 @@ and then call it using
             after convolution, assuming FWHM before convolution is 1 channel.        
         Default: 'gauss'
     perpixel : boolean, optional
-        Whether to calculate the rms per pixel instead of over whole image.
-        Use True if you know there is a sensitivity variation across the image
-        but you don't have a gain cube.  Must have rms_fits and gain_fits unset.
+        Whether to calculate the rms per XY pixel instead of over whole image.
+        Set to True if you know there is a sensitivity variation across the image
+        but you don't have a gain cube - requires rms_fits and gain_fits unset.
         Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
@@ -103,3 +103,7 @@ and then call it using
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
         Default: True
+
+### Credits
+
+Base code was developed by Tony Wong in 2019-2020.  Hailin Wang assisted with scripting, testing, and debugging the code during development.

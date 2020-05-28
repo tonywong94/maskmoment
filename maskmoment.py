@@ -229,6 +229,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     nchanimg = np.sum(dilatedmask, axis=0)
     print('Units of cube are', dil_mskcub.unit)
     if to_kelvin and has_jypbeam:
+        if hasattr(dil_mskcub, 'beam'):
+            print('Beam info:', dil_mskcub.beam)
+        else:
+            print('WARNING: Beam info is missing')
         if huge_operations:
             dil_mskcub.allow_huge_operations = True
         dil_mskcub_k = dil_mskcub.to(u.K)

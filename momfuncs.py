@@ -367,7 +367,8 @@ def smcube(snrcube, header=None, fwhm=None, vsm=None, vsm_type='gauss',
             print('Warning: no existing beam found in input to smcube')
             convolution_kernel = sm_beam.as_kernel(pixscale)
         sm_snrcube = snrcube.spatial_smooth(convolution_kernel, convolve_fft, 
-                      fill_value=0.0, nan_treatment='fill', parallel=False)
+                      fill_value=0.0, nan_treatment='fill', preserve_nan=True,
+                      parallel=False)
     else:
         sm_snrcube = snrcube
     

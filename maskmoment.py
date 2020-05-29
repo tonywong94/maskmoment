@@ -11,8 +11,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
                 outname=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, 
                 min_tot_ch=2, min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, 
                 vsm=None, vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, altoutput=False, 
-                output_snr_cube=False, output_2d_mask=False, to_kelvin=True, 
-                huge_operations=True, perpixel=False):
+                output_snr_cube=False, output_snrsm_cube=False, output_2d_mask=False, 
+                to_kelvin=True, huge_operations=True, perpixel=False):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -100,6 +100,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
+        Default: False
+    output_snrsm_cube : boolean, optional
+        Output the smoothed cube in SNR units in addition to the moment maps.
         Default: False
     output_2d_mask : boolean, optional
         Output the projected 2-D mask as well as the newly generated mask.
@@ -204,6 +207,14 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
             sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, vsm_type=vsm_type, 
                                 edgech=edgech)
             print('Smoothed SNR cube:\n', sm_snrcube)
+            if output_snrsm_cube:
+                hd3d['datamin'] = sm_snrcube.min().value
+                hd3d['datamax'] = sm_snrcube.max().value
+                hd3d['bunit'] = ' '
+                fits.writeto(pth+basename+'.snrsmcube.fits.gz', 
+                             sm_snrcube._data.astype(np.float32),
+                             hd3d, overwrite=True)
+                print('Wrote', pth+basename+'.snrsmcube.fits.gz')    
             dilcube = sm_snrcube
         else:
             dilcube = snr_cube

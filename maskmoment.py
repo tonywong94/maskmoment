@@ -8,8 +8,8 @@ from momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
 
 
 def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='', 
-                outname=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, 
-                min_tot_ch=2, min_tot_all=False, nguard=[0,0], edgech=5, fwhm=None, 
+                outname=None, snr_hi=4, snr_lo=2, minbeam=1, snr_hi_minch=1, 
+                snr_lo_minch=1, min_tot_ch=2, nguard=[0,0], edgech=5, fwhm=None, 
                 vsm=None, vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, altoutput=False, 
                 output_snr_cube=False, output_snrsm_cube=False, output_2d_mask=False, 
                 to_kelvin=True, huge_operations=True, perpixel=False):
@@ -51,16 +51,17 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     minbeam : float, optional
         Minimum velocity-integrated area of a mask region in units of the beam size.
         Default: 1
-    min_thresh_ch : int, optional
+    snr_hi_minch : int, optional
         High significance mask is required to span at least this many channels
+        at all pixels.
+        Default: 1
+    snr_lo_minch : int, optional
+        Low significance mask is required to span at least this many channels
         at all pixels.
         Default: 1
     min_tot_ch : int, optional
         Dilated mask regions are required to span at least this many channels.
         Default: 2
-    min_tot_all : boolean, optional
-        Enforce min_tot_ch for individual pixels rather than regions as a whole.
-        Default: False
     nguard : tuple of two ints, optional
         Expand the final mask by nguard[0] pixels in the sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
@@ -219,8 +220,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         else:
             dilcube = snr_cube
         dilatedmask = dilmsk(dilcube, header=hd3d, snr_hi=snr_hi, snr_lo=snr_lo, 
-                             min_thresh_ch=min_thresh_ch, min_tot_ch=min_tot_ch, 
-                             min_tot_all=min_tot_all, nguard=nguard, minbeam=minbeam)
+                             snr_hi_minch=snr_hi_minch, snr_lo_minch=snr_lo_minch, 
+                             min_tot_ch=min_tot_ch, nguard=nguard, minbeam=minbeam)
         hd3d['datamin'] = 0
         hd3d['datamax'] = 1
         hd3d['bunit'] = ' '

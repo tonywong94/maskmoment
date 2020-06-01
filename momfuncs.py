@@ -195,8 +195,8 @@ def maskguard(maskarray, niter=1, xyonly=False, vonly=False):
     return maskarray
 
 
-def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1, 
-            min_tot_ch=2, min_tot_all=False, nguard=[0,0], debug=False):
+def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, snr_hi_minch=1, 
+           snr_lo_minch=1, min_tot_ch=2, nguard=[0,0], debug=False):
     """
     Dilate a mask from one specified threshold to another.
 
@@ -216,16 +216,17 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
     minbeam : float, optional
         Minimum velocity-integrated area of a mask region in units of the beam size.
         Default: 1
-    min_thresh_ch : int, optional
+    snr_hi_minch : int, optional
         High significance mask is required to span at least this many channels
+        at all pixels.
+        Default: 1
+    snr_lo_minch : int, optional
+        Low significance mask is required to span at least this many channels
         at all pixels.
         Default: 1
     min_tot_ch : int, optional
         Dilated mask regions are required to span at least this many channels.
         Default: 2
-    min_tot_all : boolean, optional
-        Enforce min_tot_ch for all pixels instead of for regions as a whole.
-        Default: False
     nguard : tuple of two ints, optional
         Expand the final mask by this nguard[0] pixels in sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal
@@ -262,11 +263,16 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
         hdr['datamax'] = 1
         fits.writeto('snr_hi_mask.fits.gz', thresh_mask.astype(np.uint8), hdr, overwrite=True)
         fits.writeto('snr_lo_mask.fits.gz', edge_mask.astype(np.uint8), hdr, overwrite=True)
-    # Require min_thresh_ch channels at all pixels in high significance mask
-    if min_thresh_ch > 1:
-        thresh_mask = prunemask(thresh_mask, minch=min_thresh_ch, byregion=False)
+    # Require snr_hi_minch channels at all pixels in high significance mask
+    if snr_hi_minch > 1:
+        thresh_mask = prunemask(thresh_mask, minch=snr_hi_minch, byregion=False)
         if debug:
             fits.writeto('snr_hi_mask_minch.fits.gz', thresh_mask.astype(np.uint8), hdr, overwrite=True)
+    # Require snr_lo_minch channels at all pixels in low significance mask
+    if snr_lo_minch > 1:
+        edge_mask = prunemask(edge_mask, minch=snr_lo_minch, byregion=False)
+        if debug:
+            fits.writeto('snr_lo_mask_minch.fits.gz', edge_mask.astype(np.uint8), hdr, overwrite=True)
     # Find islands in low significance mask
     if snr_lo < snr_hi:
         s = ndimage.generate_binary_structure(3, 1)
@@ -285,7 +291,7 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, min_thresh_ch=1,
         dil_mask = thresh_mask
     # Final pruning to enforce area and total vel width constraints
     if min_tot_ch > 1 or minarea > 0:
-        dil_mask = prunemask(dil_mask, minarea=minarea, minch=min_tot_ch, byregion=~min_tot_all)
+        dil_mask = prunemask(dil_mask, minarea=minarea, minch=min_tot_ch, byregion=True)
         if debug:
             fits.writeto('pruned_mask.fits.gz', dil_mask.astype(np.uint8), hdr, overwrite=True)
     # Expand by nguard pixels (padding)

@@ -48,19 +48,20 @@ and then call it using
     snr_lo : float, optional
         The low significance sigma threshold at which to end mask dilation.
         Default: 2
-    minbeam : float, optional
-        Minimum velocity-integrated area of a mask region in units of the beam size.
-        Default: 1
-    min_thresh_ch : int, optional
+    snr_hi_minch : int, optional
         High significance mask is required to span at least this many channels
         at all pixels.
+        Default: 1
+    snr_lo_minch : int, optional
+        Low significance mask is required to span at least this many channels
+        at all pixels.
+        Default: 1
+    minbeam : float, optional
+        Minimum velocity-integrated area of a mask region in units of the beam size.
         Default: 1
     min_tot_ch : int, optional
         Dilated mask regions are required to span at least this many channels.
         Default: 2
-    min_tot_all : boolean, optional
-        Enforce min_tot_ch for individual pixels rather than regions as a whole.
-        Default: False
     nguard : tuple of two ints, optional
         Expand the final mask by nguard[0] pixels in the sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal

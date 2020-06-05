@@ -96,6 +96,9 @@ and then call it using
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
         Default: False
+    output_snr_peak : boolean, optional
+        Output the peak SNR image in addition to the moment maps.
+        Default: False
     output_2d_mask : boolean, optional
         Output the projected 2-D mask as well as the newly generated mask.
         The projected mask at a given pixel is valid for all channels as

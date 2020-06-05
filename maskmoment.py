@@ -10,9 +10,9 @@ from momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
 def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='', 
                 outname=None, snr_hi=4, snr_lo=2, minbeam=1, snr_hi_minch=1, 
                 snr_lo_minch=1, min_tot_ch=2, nguard=[0,0], edgech=5, fwhm=None, 
-                vsm=None, vsm_type='gauss', mom1_chmin=2, mom2_chmin=2, altoutput=False, 
-                output_snr_cube=False, output_snrsm_cube=False, output_2d_mask=False, 
-                to_kelvin=True, huge_operations=True, perpixel=False):
+                vsm=None, vsm_type='gauss', mom1_minch=2, mom2_minch=2, altoutput=False, 
+                output_snr_cube=False, output_snr_peak=False, output_snrsm_cube=False, 
+                output_2d_mask=False, to_kelvin=True, huge_operations=True, perpixel=False):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -88,10 +88,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         (3) 'gaussfinal' - 1D gaussian smoothing, vsm is the gaussian FWHM
             after convolution, assuming FWHM before convolution is 1 channel.        
         Default: 'gauss'
-    mom1_chmin : int, optional
+    mom1_minch : int, optional
         Minimum number of unmasked channels needed to calculate moment-1.
         Default: 2
-    mom2_chmin : int, optional
+    mom2_minch : int, optional
         Minimum number of unmasked channels needed to calculate moment-2.
         Default: 2
     perpixel : boolean, optional
@@ -101,6 +101,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
+        Default: False
+    output_snr_peak : boolean, optional
+        Output the peak SNR image in addition to the moment maps.
         Default: False
     output_snrsm_cube : boolean, optional
         Output the smoothed cube in SNR units in addition to the moment maps.
@@ -194,13 +197,14 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
             fits.writeto(pth+basename+'.snrcube.fits.gz', snr_cube._data.astype(np.float32),
                          hd3d, overwrite=True)
             print('Wrote', pth+basename+'.snrcube.fits.gz')    
-        snr_peak = snr_cube.max(axis=0)
-        hd2d['datamin'] = np.nanmin(snr_peak.value)
-        hd2d['datamax'] = np.nanmax(snr_peak.value)
-        hd2d['bunit'] = ' '
-        fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
-                     hd2d, overwrite=True)
-        print('Wrote', pth+basename+'.snrpk.fits.gz')
+        if output_snr_peak:
+            snr_peak = snr_cube.max(axis=0)
+            hd2d['datamin'] = np.nanmin(snr_peak.value)
+            hd2d['datamax'] = np.nanmax(snr_peak.value)
+            hd2d['bunit'] = ' '
+            fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
+                         hd2d, overwrite=True)
+            print('Wrote', pth+basename+'.snrpk.fits.gz')
         #
         # --- GENERATE AND OUTPUT DILATED MASK
         #
@@ -265,11 +269,11 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     vmax = dil_mskcub.spectral_extrema[1]
     dil_mskcub_mom1[dil_mskcub_mom1 < vmin] = np.nan
     dil_mskcub_mom1[dil_mskcub_mom1 > vmax] = np.nan
-    dil_mskcub_mom1[nchanimg < mom1_chmin] = np.nan
+    dil_mskcub_mom1[nchanimg < mom1_minch] = np.nan
     writemom(dil_mskcub_mom1, type='mom1', filename=pth+basename, hdr=hd2d)
     # --- Moment 2: require at least 2 unmasked channels at each pixel
     dil_mskcub_mom2 = dil_mskcub.linewidth_sigma().to(u.km/u.s)
-    dil_mskcub_mom2[nchanimg < mom2_chmin] = np.nan
+    dil_mskcub_mom2[nchanimg < mom2_minch] = np.nan
     writemom(dil_mskcub_mom2, type='mom2', filename=pth+basename, hdr=hd2d)
     #
     # --- CALCULATE ERRORS IN MOMENTS
@@ -281,10 +285,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     errmom1 = errmom[1] * u.km/u.s
     errmom1[dil_mskcub_mom1 < vmin] = np.nan
     errmom1[dil_mskcub_mom1 > vmax] = np.nan
-    errmom1[nchanimg < mom1_chmin] = np.nan
+    errmom1[nchanimg < mom1_minch] = np.nan
     writemom(errmom1, type='emom1', filename=pth+basename, hdr=hd2d)
     errmom2 = errmom[2] * u.km/u.s
-    errmom2[nchanimg < mom2_chmin] = np.nan
+    errmom2[nchanimg < mom2_minch] = np.nan
     writemom(errmom2, type='emom2', filename=pth+basename, hdr=hd2d)
     if altoutput:
         altmom0 = altmom[0] * abs(hd3d['CDELT3'])/1000 * dil_mskcub_mom0.unit 
@@ -292,9 +296,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         altmom1 = altmom[1] * u.km/u.s
         altmom1[altmom1 < vmin] = np.nan
         altmom1[altmom1 > vmax] = np.nan
-        altmom1[nchanimg < mom1_chmin] = np.nan
+        altmom1[nchanimg < mom1_minch] = np.nan
         altmom2 = altmom[2] * u.km/u.s
-        altmom2[nchanimg < mom2_chmin] = np.nan
+        altmom2[nchanimg < mom2_minch] = np.nan
         writemom(altmom0, type='amom0', filename=pth+basename, hdr=hd2d)
         writemom(altmom1, type='amom1', filename=pth+basename, hdr=hd2d)
         writemom(altmom2, type='amom2', filename=pth+basename, hdr=hd2d)

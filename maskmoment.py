@@ -239,27 +239,29 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
                          hd3d, overwrite=True)
             print('Wrote', pth+basename+'.mask2d.fits.gz')
     #
+    # --- CALCULATE FLUXES (IN ORIGINAL UNITS)
+    #
+    if mask_fits is None and output_2d_mask:
+        fluxtab = findflux(image_cube, rms_cube, dilatedmask, proj_msk)
+    else:
+        fluxtab = findflux(image_cube, rms_cube, dilatedmask)
+    fluxtab.write(pth+basename+'.flux.csv', delimiter=',', format='ascii.ecsv', 
+                  overwrite=True)
+    print('Wrote', pth+basename+'.flux.csv')
+    #
     # --- GENERATE AND OUTPUT MOMENT MAPS
     #
-    dil_mskcub = image_cube.with_mask(dilatedmask > 0)
     nchanimg = np.sum(dilatedmask, axis=0)
-    print('Units of cube are', dil_mskcub.unit)
+    print('Units of cube are', image_cube.unit)
     if to_kelvin and has_jypbeam:
-        if hasattr(dil_mskcub, 'beam'):
-            print('Beam info:', dil_mskcub.beam)
+        if hasattr(image_cube, 'beam'):
+            print('Beam info:', image_cube.beam)
         else:
             print('WARNING: Beam info is missing')
-        if huge_operations:
-            dil_mskcub.allow_huge_operations = True
-        dil_mskcub_k = dil_mskcub.to(u.K)
-        dil_mskcub = dil_mskcub_k
-        dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.K*u.km/u.s)
-    elif has_jypbeam:  # keep Jy/bm but use km/s
-        dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.Jy/u.beam*u.km/u.s)
-    elif to_kelvin:    # keep K but use km/s
-        dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(u.K*u.km/u.s)
-    else:
-        dil_mskcub_mom0 = dil_mskcub.moment(order=0)
+        image_cube = image_cube.to(u.K)
+        rms_cube = rms_cube.to(u.K)
+    dil_mskcub = image_cube.with_mask(dilatedmask > 0)
+    dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(image_cube.unit*u.km/u.s)
     if hasattr(dil_mskcub_mom0, 'unit'):
         print('Units of mom0 map are', dil_mskcub_mom0.unit)
     writemom(dil_mskcub_mom0, type='mom0', filename=pth+basename, hdr=hd2d)
@@ -302,15 +304,5 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         writemom(altmom0, type='amom0', filename=pth+basename, hdr=hd2d)
         writemom(altmom1, type='amom1', filename=pth+basename, hdr=hd2d)
         writemom(altmom2, type='amom2', filename=pth+basename, hdr=hd2d)
-    #
-    # --- CALCULATE FLUXES
-    #
-    if mask_fits is None and output_2d_mask:
-        fluxtab = findflux(image_cube, rms_cube, dilatedmask, proj_msk)
-    else:
-        fluxtab = findflux(image_cube, rms_cube, dilatedmask)
-    fluxtab.write(pth+basename+'.flux.csv', delimiter=',', format='ascii.ecsv', 
-                  overwrite=True)
-    print('Wrote', pth+basename+'.flux.csv')
     return
 

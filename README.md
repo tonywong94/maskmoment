@@ -5,7 +5,7 @@ Based on idl_mommaps: https://github.com/tonywong94/idl_mommaps
 
 Required packages: [spectral_cube](https://spectral-cube.readthedocs.io/), [radio_beam](https://radio-beam.readthedocs.io/), [astropy](https://www.astropy.org), [scipy](https://www.scipy.org)
 
-**Note:** A serious error was uncovered on 9-Jun-2020 where the emom0 image was not been scaled to K, even though it was labeled as K km/s.  Please update any results obtained with code from before that time.
+**Note:** A serious error was uncovered on 9-Jun-2020 where the emom0 image was not being scaled to K, even though it was labeled as K km/s.  Please update any results obtained with code from before that time.
 
 Currently the code should **not** be installed in your site-packages area.  Just import
 it using

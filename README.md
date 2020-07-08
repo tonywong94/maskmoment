@@ -41,7 +41,7 @@ and then call it using
         Default: Write to the directory where img_fits resides.
         NOTE: Currently this directory is assumed to exist.
     outname : string, optional
-        Basname for output files.  For instance, outname='foo' produces files
+        Basename for output files.  For instance, outname='foo' produces files
         'foo.mom0.fits.gz', etc.
         Default: Based on root name of img_fits.
     snr_hi : float, optional
@@ -58,12 +58,13 @@ and then call it using
         Low significance mask is required to span at least this many channels
         at all pixels.
         Default: 1
+    min_tot_ch : int, optional
+        Each contiguous mask region must span at least this many channels (but 
+        it's not necessary that every pixel in the region span this many channels).
+        Default: 2
     minbeam : float, optional
         Minimum velocity-integrated area of a mask region in units of the beam size.
         Default: 1
-    min_tot_ch : int, optional
-        Dilated mask regions are required to span at least this many channels.
-        Default: 2
     nguard : tuple of two ints, optional
         Expand the final mask by nguard[0] pixels in the sky directions and
         nguard[1] channels in velocity.  Currently these values must be equal

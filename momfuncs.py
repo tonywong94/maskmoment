@@ -69,7 +69,8 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
         noisearray = np.zeros_like(cubearray) + rms
     else:
         if isinstance(gainarray, SpectralCube):
-            gainarray = gainarray.unmasked_data[:]
+            #gainarray = gainarray.unmasked_data[:]
+            gainarray = gainarray.unitless_filled_data[:]
         if clip is not None:
             gainarray[gainarray < clip] = np.nan
         if rms is None:

@@ -4,7 +4,7 @@ from spectral_cube import SpectralCube
 from astropy.io import fits
 from astropy import units as u
 from astropy import wcs
-from momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
+from .momfuncs import makenoise, dilmsk, smcube, findflux, writemom, calc_moments
 
 
 def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='', 

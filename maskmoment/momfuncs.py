@@ -312,7 +312,7 @@ def dilmsk(snrcube, header=None, snr_hi=4, snr_lo=2, minbeam=1, snr_hi_minch=1,
 
 
 def smcube(snrcube, header=None, fwhm=None, vsm=None, vsm_type='gauss',
-          edgech=None):
+          edgech=None, huge=True):
     """
     Smooth an SNRcube to produce a higher signal-to-noise SNRcube.
 
@@ -407,6 +407,9 @@ def smcube(snrcube, header=None, fwhm=None, vsm=None, vsm_type='gauss',
 
     # -- Renormalize by rms
     newrms = makenoise(sm_snrcube, edge=edgech)
+    if huge:
+        sm_snrcube.allow_huge_operations = True
+        newrms.allow_huge_operations = True
     sm_snrcube = sm_snrcube / newrms
     return sm_snrcube
 

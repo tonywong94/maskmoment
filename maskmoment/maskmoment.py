@@ -211,7 +211,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         #
         if fwhm is not None or vsm is not None:
             sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, vsm_type=vsm_type, 
-                                edgech=edgech)
+                                edgech=edgech, huge=huge_operations)
             print('Smoothed SNR cube:\n', sm_snrcube)
             if output_snrsm_cube:
                 hd3d['datamin'] = sm_snrcube.min().value

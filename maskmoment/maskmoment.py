@@ -175,8 +175,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         else:
             rms_cube = makenoise(image_cube, edge=edgech, perpixel=perpixel)
         print('Noise cube:\n',rms_cube)
-        hd3d['datamin'] = np.nanmin(rms_cube._data[0])
-        hd3d['datamax'] = np.nanmax(rms_cube._data[0])
+        hd3d['datamin'] = np.nanmin(rms_cube._data)
+        hd3d['datamax'] = np.nanmax(rms_cube._data)
         fits.writeto(pth+basename+'.ecube.fits.gz', rms_cube._data.astype(np.float32),
                  hd3d, overwrite=True)
         print('Wrote', pth+basename+'.ecube.fits.gz')

@@ -11,8 +11,9 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
                 outname=None, snr_hi=4, snr_lo=2, minbeam=1, snr_hi_minch=1, 
                 snr_lo_minch=1, min_tot_ch=2, nguard=[0,0], edgech=5, fwhm=None, 
                 vsm=None, vsm_type='gauss', mom1_minch=2, mom2_minch=2, altoutput=False, 
-                output_snr_cube=False, output_snr_peak=False, output_snrsm_cube=False, 
-                output_2d_mask=False, to_kelvin=True, huge_operations=True, perpixel=False):
+                output_peak=False, output_snr_cube=False, output_snr_peak=False, 
+                output_snrsm_cube=False, output_2d_mask=False, to_kelvin=True, 
+                huge_operations=True, perpixel=False):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -99,6 +100,11 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Whether to calculate the rms per XY pixel instead of over whole image.
         Set to True if you know there is a sensitivity variation across the image
         but you don't have a gain cube - requires rms_fits and gain_fits unset.
+        Default: False
+    output_peak : boolean, optional
+        Output the peak brightness and effective line width (mom0/peak) in 
+        addition to the moment maps.  The line width is normalized to match mom-2 
+        for a pure Gaussian profile.
         Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
@@ -261,11 +267,18 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
             print('WARNING: Beam info is missing')
         image_cube = image_cube.to(u.K)
         rms_cube = rms_cube.to(u.K)
+    # --- Moment 0
     dil_mskcub = image_cube.with_mask(dilatedmask > 0)
     dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(image_cube.unit*u.km/u.s)
     if hasattr(dil_mskcub_mom0, 'unit'):
         print('Units of mom0 map are', dil_mskcub_mom0.unit)
     writemom(dil_mskcub_mom0, type='mom0', filename=pth+basename, hdr=hd2d)
+    # --- Peak brightness and effective linewidth (optional)
+    if output_peak:
+        peak = image_cube.max(axis=0)
+        writemom(peak, type='peak', filename=pth+basename, hdr=hd2d)
+        vwidth = dil_mskcub_mom0 / (peak*np.sqrt(2*np.pi))
+        writemom(vwidth, type='vwidth', filename=pth+basename, hdr=hd2d)
     # --- Moment 1: mean velocity must be in range of cube
     dil_mskcub_mom1 = dil_mskcub.moment(order=1).to(u.km/u.s)
     vmin = dil_mskcub.spectral_extrema[0]

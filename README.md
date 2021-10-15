@@ -90,6 +90,11 @@ How to use:
         Set to True if you know there is a sensitivity variation across the image
         but you don't have a gain cube - requires rms_fits and gain_fits unset.
         Default: False
+    output_peak : boolean, optional
+        Output the peak brightness and effective line width (mom0/peak) in 
+        addition to the moment maps.  The line width is normalized to match mom-2 
+        for a pure Gaussian profile.
+        Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.
         Default: False

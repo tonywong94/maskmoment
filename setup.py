@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='maskmoment',
-    version='1.0',
+    version='1.1',
     description='Masked moments of radio data cubes',
     author='Tony Wong',
     author_email = 'tonywong94@gmail.com',

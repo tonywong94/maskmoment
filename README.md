@@ -17,13 +17,18 @@ How to use:
     gain_fits : FITS file name, optional
         The gain cube, e.g. pb cube from CASA.  This should have a value between
         0 and 1, with 0 near the edges and 1 near the center of the image, and 
-        have the same dimensions as the image cube.
+        have the same dimensions as (or broadcastable to) the image cube.
         NOTE: The gain cube is ignored if a noise cube (rms_fits) is given.
     rms_fits : FITS file name, optional
         The noise cube, providing an estimate of the rms noise at each pixel.
         This should have the same dimensions and units as the image cube.
+        If it is a 2D array it will be replicated along the velocity axis.
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
+    rms : float, optional
+        Global estimate of the rms noise, to be used instead of trying
+        to estimate it from the data.  It should have the units of the input cube.
+        Default is to use rms_fits, or to calculate the rms from the data.
     mask_fits : FITS file name, optional
         External mask cube to use.  This cube should have 1's for valid pixels 
         and 0's for excluded pixels.  If this is provided then the mask generation
@@ -31,7 +36,6 @@ How to use:
     outdir : string, optional
         Directory to write the output files.
         Default: Write to the directory where img_fits resides.
-        NOTE: Currently this directory is assumed to exist.
     outname : string, optional
         Basename for output files.  For instance, outname='foo' produces files
         'foo.mom0.fits.gz', etc.

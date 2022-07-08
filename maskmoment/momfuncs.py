@@ -11,7 +11,8 @@ from astropy.table import Table
 from spectral_cube import SpectralCube
 
 
-def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, clip=0.2):
+def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, 
+              splitchan=None, clip=0.2):
     """
     Given a data cube and an optional gain cube, estimate the noise at each position,
     using the robust mad_std estimator in astropy.
@@ -37,6 +38,10 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
         Number of channels at left and right edges of each spectrum to use 
         for rms estimation.
         Default is to use all channels.
+    splitchan : int, optional
+        If there is a discontinuity in the spectrum noise, splitchan can be used
+        to specify the channel number (counting from 0) where the 2nd section starts.
+        An estimate of the noise will be determined for each section separately.
     clip : float, optional
         Pixels below this value in the input gainarray are marked invalid.
         Default: 0.2
@@ -60,31 +65,43 @@ def makenoise(cubearray, gainarray=None, rms=None, perpixel=False, edge=None, cl
     else:                # rms varies with position
         doax = 0
     if gainarray is None:
-        if rms is None:
-            if edge is None:
-                rms = mad_std(cubearray, axis=doax, ignore_nan=True)
-            else:  # take only edge channels for estimating rms
-                slc = np.r_[0:edge,cubearray.shape[0]-edge:cubearray.shape[0]]
-                rms = mad_std(cubearray[slc,:,:], axis=doax, ignore_nan=True)
-        noisearray = np.zeros_like(cubearray) + rms
-    else:
-        if isinstance(gainarray, SpectralCube):
-            #gainarray = gainarray.unmasked_data[:]
-            gainarray = gainarray.unitless_filled_data[:]
-        if clip is not None:
-            gainarray[gainarray < clip] = np.nan
-        if rms is None:
-            imflat = cubearray * np.broadcast_to(gainarray, cubearray.shape)
-            if edge is None:
-                rms = mad_std(imflat, axis=doax, ignore_nan=True)
-            else:  # take only edge channels for estimating rms
-                slc = np.r_[0:edge,cubearray.shape[0]-edge:cubearray.shape[0]]
-                rms = mad_std(imflat[slc,:,:], axis=doax, ignore_nan=True)
+        gainarray = np.ones(cubearray.shape)
+    elif isinstance(gainarray, SpectralCube):
+        gainarray = gainarray.unitless_filled_data[:]
+    if clip is not None:
+        gainarray[gainarray < clip] = np.nan
+    nchan = cubearray.shape[0]
+    
+    if rms is not None:
         noisearray = np.broadcast_to(rms/gainarray, cubearray.shape).copy()
-        # Added 21may2020 to match masks of noise and image cubes
-        noisearray[np.isnan(cubearray)] = np.nan
-    if perpixel==False:
-        print('Found rms value of {:.4f}'.format(rms))
+    elif splitchan is not None:
+        imflat = cubearray * np.broadcast_to(gainarray, cubearray.shape)
+        if edge is None:
+            lfree1 = np.arange(0, splitchan)
+            lfree2 = np.arange(splitchan, nchan)
+        else:  # take only edge channels for estimating rms
+            lfree1 = np.arange(edge)
+            lfree2 = np.arange(nchan-edge, nchan)
+        rms1 = mad_std(imflat[lfree1,:,:], axis=doax, ignore_nan=True)
+        rms2 = mad_std(imflat[lfree2,:,:], axis=doax, ignore_nan=True)
+        if perpixel==False:
+            print('Found rms values of {:.4f} and {:.4f}'.format(rms1,rms2))
+        rmsarray = np.concatenate([np.repeat(rms1,splitchan),
+                                   np.repeat(rms2,nchan-splitchan)])[:,None,None]
+        noisearray = np.broadcast_to(rmsarray/gainarray, cubearray.shape).copy()
+    else:        
+        imflat = cubearray * np.broadcast_to(gainarray, cubearray.shape)
+        if edge is None:
+            rms = mad_std(imflat, axis=doax, ignore_nan=True)
+        else:  # take only edge channels for estimating rms
+            lfree = np.r_[0:edge,nchan-edge:nchan]
+            rms = mad_std(imflat[lfree,:,:], axis=doax, ignore_nan=True)
+        if perpixel==False:
+            print('Found rms value of {:.4f}'.format(rms))
+        noisearray = np.broadcast_to(rms/gainarray, cubearray.shape).copy()
+
+    # Added 21may2020 to match masks of noise and image cubes
+    noisearray[np.isnan(cubearray)] = np.nan
     if spcube:
         if unit != '' and hasattr(noisearray, 'unit')==False:
             noisecube = SpectralCube(data=noisearray*unit, header=hdr, wcs=wcs.WCS(hdr))
@@ -514,7 +531,10 @@ def findflux(imcube, rmscube, mask=None, projmask=None):
                         names=('Velocity', 'Flux', 'FluxErr', 'Flux2d', 'Flux2dErr'))
     fluxtab.meta['totflux'] = "{:.2f} +/- {:.2f}".format(
                 f_tot[0]/scl,e_tot[0]/scl)+' '+out_unit.to_string()+' km/s'
-    fluxtab['Velocity'].description = 'Velocity, ' + hd['ctype3'] + ', ' + hd['specsys']
+    if 'specsys' in hd.keys():
+        fluxtab['Velocity'].description = 'Velocity, ' + hd['ctype3'] + ', ' + hd['specsys']
+    else:
+        fluxtab['Velocity'].description = 'Velocity, ' + hd['ctype3']
     fluxtab['Velocity'].format = '.3f'
     fluxtab['Flux'].unit = out_unit
     fluxtab['Flux'].format = '.4f'

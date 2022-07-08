@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from spectral_cube import SpectralCube
+from spectral_cube.cube_utils import convert_bunit
 from astropy.io import fits
 from astropy import units as u
 from astropy import wcs
@@ -13,7 +14,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
                 vsm=None, vsm_type='gauss', mom1_minch=2, mom2_minch=2, altoutput=False, 
                 output_peak=False, output_snr_cube=False, output_snr_peak=False, 
                 output_snrsm_cube=False, output_2d_mask=False, to_kelvin=True, 
-                huge_operations=True, perpixel=False):
+                huge_operations=True, perpixel=False, splitchan=None, rms=None):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -24,13 +25,18 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     gain_fits : FITS file name, optional
         The gain cube, e.g. pb cube from CASA.  This should have a value between
         0 and 1, with 0 near the edges and 1 near the center of the image, and 
-        have the same dimensions as the image cube.
+        have the same dimensions as (or broadcastable to) the image cube.
         NOTE: The gain cube is ignored if a noise cube (rms_fits) is given.
     rms_fits : FITS file name, optional
         The noise cube, providing an estimate of the rms noise at each pixel.
         This should have the same dimensions and units as the image cube.
+        If it is a 2D array it will be replicated along the velocity axis.
         NOTE: If rms_fits is not given, a noise cube is generated from the
         image cube, after removing any gain variation using the gain cube.
+    rms : float, optional
+        Global estimate of the rms noise, to be used instead of trying
+        to estimate it from the data.  It should have the units of the input cube.
+        Default is to use rms_fits, or to calculate the rms from the data.
     mask_fits : FITS file name, optional
         External mask cube to use.  This cube should have 1's for valid pixels 
         and 0's for excluded pixels.  If this is provided then the mask generation
@@ -38,7 +44,6 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     outdir : string, optional
         Directory to write the output files.
         Default: Write to the directory where img_fits resides.
-        NOTE: Currently this directory is assumed to exist.
     outname : string, optional
         Basename for output files.  For instance, outname='foo' produces files
         'foo.mom0.fits.gz', etc.
@@ -127,6 +132,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Also output moment maps from a "direct" calculation instead of
         the moment method in spectral_cube.  Mainly used for debugging.
         Default: False
+    splitchan : int, optional
+        If there is a discontinuity in the spectrum noise, splitchan can be used
+        to specify the channel number (counting from 0) where the 2nd section starts.
+        An estimate of the noise will be determined for each section separately.
     huge_operations : boolean, optional
         Allow huge operations in spectral_cube.
         Default: True
@@ -136,13 +145,13 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     # --- DETERMINE OUTPUT FILE NAMES
     #
     if outdir != '':
-        pth = outdir + '/'
+        if not os.path.isdir(outdir):
+            os.makedirs(outdir)
+            print('\nCreated directory',outdir)
+        pth = os.path.join(outdir, '')
     else:
         img_dir = os.path.dirname(img_fits)
-        if img_dir == '':
-            pth = './'
-        else:
-            pth = img_dir + '/'
+        pth = os.path.join(img_dir, '')
     if outname is not None:
         basename = outname
     else:
@@ -164,37 +173,48 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     has_jypbeam = all(x in (hd3d['bunit']).upper() for x in ['JY', 'B'])
     print('Image cube '+img_fits+':\n',image_cube)
     if rms_fits is not None:
-        rms_cube = SpectralCube.read(rms_fits)
+        rms_dat, rms_hd = fits.getdata(rms_fits, header=True)
+        unit = convert_bunit(rms_hd['bunit'])
+        if rms_hd['naxis'] == 2:
+            rmsarray = np.broadcast_to(np.expand_dims(rms_dat, axis=0), image_cube.shape)
+            rms_cube = SpectralCube(data=rmsarray*unit, header=hd3d, wcs=wcs.WCS(hd3d))
+        elif rms_dat.shape[0] == 1:
+            rmsarray = np.broadcast_to(rms_dat, image_cube.shape)
+            rms_cube = SpectralCube(data=rmsarray*unit, header=hd3d, wcs=wcs.WCS(hd3d))
+        else:            
+            rms_cube = SpectralCube.read(rms_fits)
         if rms_cube.unit != image_cube.unit:
             raise RuntimeError('Noise cube units', rms_cube.unit, 
                                'differ from image units', image_cube.unit)
-        if rms_cube.shape[0] == 1:
-            rmsarray = np.broadcast_to(rms_cube, image_cube.shape)
-            unit = rms_cube.unit
-            rms_cube = SpectralCube(data=rmsarray*unit, header=hd3d, wcs=wcs.WCS(hd3d))
         print('Noise cube '+rms_fits+':\n',rms_cube)
     else:
         if gain_fits is not None:
-            gain_cube  = SpectralCube.read(gain_fits)
-            print('Gain cube '+gain_fits+':\n',gain_cube)
-            rms_cube = makenoise(image_cube, gain_cube, edge=edgech)
+            try:
+                gain_cube  = SpectralCube.read(gain_fits)
+                print('Gain cube '+gain_fits+':\n',gain_cube)
+            except ValueError:
+                gain_cube = fits.getdata(gain_fits)
+                print('Gain is not a cube - reading as ndarray')
+            rms_cube = makenoise(image_cube, gain_cube, edge=edgech, rms=rms,
+                                 splitchan=splitchan)
         else:
-            rms_cube = makenoise(image_cube, edge=edgech, perpixel=perpixel)
+            rms_cube = makenoise(image_cube, edge=edgech, perpixel=perpixel, rms=rms,
+                                 splitchan=splitchan)
         print('Noise cube:\n',rms_cube)
         hd3d['datamin'] = np.nanmin(rms_cube._data)
         hd3d['datamax'] = np.nanmax(rms_cube._data)
         fits.writeto(pth+basename+'.ecube.fits.gz', rms_cube._data.astype(np.float32),
                  hd3d, overwrite=True)
         print('Wrote', pth+basename+'.ecube.fits.gz')
+    if huge_operations:
+        image_cube.allow_huge_operations = True
+        rms_cube.allow_huge_operations = True
     #
     # --- GENERATE AND OUTPUT SNR CUBE, PEAK SNR IMAGE
     #
     if mask_fits is not None:
         dilatedmask = fits.getdata(mask_fits)
     else:
-        if huge_operations:
-            image_cube.allow_huge_operations = True
-            rms_cube.allow_huge_operations = True
         snr_cube = image_cube / rms_cube
         print('SNR cube:\n',snr_cube)
         if output_snr_cube:

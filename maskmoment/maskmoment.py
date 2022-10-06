@@ -107,23 +107,24 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         but you don't have a gain cube - requires rms_fits and gain_fits unset.
         Default: False
     output_peak : boolean, optional
-        Output the peak brightness and effective line width (mom0/peak) in 
-        addition to the moment maps.  The line width is normalized to match mom-2 
-        for a pure Gaussian profile.
+        Output the peak brightness, velocity at peak brightness, and effective 
+        line width (mom0/peak) in addition to the moment maps.  The peak brightness
+        has no mask applied, the other two are derived from the masked cube.  The 
+        effective line width is normalized to match mom-2 for a pure Gaussian profile.
         Default: False
     output_snr_cube : boolean, optional
-        Output the cube in SNR units in addition to the moment maps.
+        Output the (unmasked) cube in SNR units in addition to the moment maps.
         Default: False
     output_snr_peak : boolean, optional
-        Output the peak SNR image in addition to the moment maps.
+        Output the (unmasked) peak SNR image in addition to the moment maps.
         Default: False
     output_snrsm_cube : boolean, optional
         Output the smoothed cube in SNR units in addition to the moment maps.
         Default: False
     output_2d_mask : boolean, optional
         Output the projected 2-D mask as well as the newly generated mask.
-        The projected mask at a given pixel is valid for all channels as
-        long as the parent mask is valid for any channel.
+        The projected mask at a given pixel is valid as long as the parent mask 
+        is valid for any channel.
         Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
@@ -297,6 +298,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     if output_peak:
         peak = image_cube.max(axis=0)
         writemom(peak, type='peak', filename=pth+basename, hdr=hd2d)
+        vpeak = dil_mskcub.argmax_world(axis=0).to(u.km/u.s)
+        writemom(vpeak, type='vpeak', filename=pth+basename, hdr=hd2d)
         vwidth = dil_mskcub_mom0 / (peak*np.sqrt(2*np.pi))
         writemom(vwidth, type='vwidth', filename=pth+basename, hdr=hd2d)
     # --- Moment 1: mean velocity must be in range of cube

@@ -42,6 +42,7 @@ How to use:
         Default: Based on root name of img_fits.
     snr_hi : float, optional
         The high significance sigma threshold from which to begin mask dilation.
+        Use a very low number (such as -10) to produce unmasked moment maps.
         Default: 4
     snr_lo : float, optional
         The low significance sigma threshold at which to end mask dilation.
@@ -93,9 +94,10 @@ How to use:
         but you don't have a gain cube - requires rms_fits and gain_fits unset.
         Default: False
     output_peak : boolean, optional
-        Output the peak brightness and effective line width (mom0/peak) in 
-        addition to the moment maps.  The line width is normalized to match mom-2 
-        for a pure Gaussian profile.
+        Output the peak brightness, velocity at peak brightness, and effective 
+        line width (mom0/peak) in addition to the moment maps.  The peak brightness
+        has no mask applied, the other two are derived from the masked cube.  The 
+        effective line width is normalized to match mom-2 for a pure Gaussian profile.
         Default: False
     output_snr_cube : boolean, optional
         Output the cube in SNR units in addition to the moment maps.

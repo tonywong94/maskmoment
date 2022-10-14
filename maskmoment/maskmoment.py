@@ -50,6 +50,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Default: Based on root name of img_fits.
     snr_hi : float, optional
         The high significance sigma threshold from which to begin mask dilation.
+        Use a very low number (such as -10) to produce unmasked moment maps.
         Default: 4
     snr_lo : float, optional
         The low significance sigma threshold at which to end mask dilation.

@@ -113,6 +113,16 @@ How to use:
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.
         Default: True
+    vmin : float or :class:`~astropy.units.Quantity`, optional
+        Minimum channel number or velocity to use for moment calculation.  
+        If given as astropy quantity, should be provided in velocity units.  
+        If NOT given as astropy quantity, interpreted as channel number.
+        Default: Do not impose a velocity cut.
+    vmax : float or :class:`~astropy.units.Quantity`, optional
+        Maximum channel number or velocity to use for moment calculation. 
+        If given as astropy quantity, should be provided in velocity units.  
+        If NOT given as astropy quantity, interpreted as channel number.
+        Default: Do not impose a velocity cut.
 
 ### Credits
 

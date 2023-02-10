@@ -14,7 +14,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
                 vsm=None, vsm_type='gauss', mom1_minch=2, mom2_minch=2, altoutput=False, 
                 output_peak=False, output_snr_cube=False, output_snr_peak=False, 
                 output_snrsm_cube=False, output_2d_mask=False, to_kelvin=True, 
-                huge_operations=True, perpixel=False, splitchan=None, rms=None):
+                huge_operations=True, perpixel=False, splitchan=None, rms=None,
+                vmin=None, vmax=None):
     """
     Produce FITS images of moment maps using a dilated masking approach.
 
@@ -86,8 +87,8 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Default: No spatial smoothing is applied.
     vsm : float or :class:`~astropy.units.Quantity`, optional
         Full width of the spectral smoothing kernel (or FWHM for gaussian).  
-        If given as astropy quantity, should be given in velocity units.  
-        If not given as astropy quantity, interpreted as number of channels.
+        If given as astropy quantity, should be provided in velocity units.  
+        If NOT given as astropy quantity, interpreted as number of channels.
         Default: No spectral smoothing is applied.
     vsm_type : string, optional
         What type of spectral smoothing to employ.  Currently three options:
@@ -141,6 +142,18 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     huge_operations : boolean, optional
         Allow huge operations in spectral_cube.
         Default: True
+    vmin : float or :class:`~astropy.units.Quantity`, optional
+        Minimum channel number or velocity to use for all calculations.  Note
+        that channels are discarded before any rms estimation using edgech.
+        If given as astropy quantity, should be provided in velocity units.  
+        If NOT given as astropy quantity, interpreted as channel number.
+        Default: None.
+    vmax : float or :class:`~astropy.units.Quantity`, optional
+        Maximum channel number or velocity to use for all calculations.  Note
+        that channels are discarded before any rms estimation using edgech.
+        If given as astropy quantity, should be provided in velocity units.  
+        If NOT given as astropy quantity, interpreted as channel number.
+        Default: None.
     """
     np.seterr(divide='ignore', invalid='ignore')
     #
@@ -166,37 +179,74 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     #
     # --- READ INPUT FILES, OUTPUT NOISE CUBE IF NEWLY GENERATED
     #
+    # -- Read the image cube
     image_cube = SpectralCube.read(img_fits)
     hd3d = image_cube.header
+    if hd3d['CUNIT3'] == 'Hz':
+        print('Image cube in frequency '+img_fits+':\n',image_cube)
+        image_cube = image_cube.with_spectral_unit(u.m / u.s, 'radio')
     hd2d = hd3d.copy()
     hd2d['WCSAXES'] = 2
     for key in ['CRVAL3', 'CTYPE3', 'CRPIX3', 'CDELT3', 'CUNIT3']:
         del hd2d[key]
     has_jypbeam = all(x in (hd3d['bunit']).upper() for x in ['JY', 'B'])
     print('Image cube '+img_fits+':\n',image_cube)
+    # -- Apply velocity slicing if requested
+    v0 = image_cube.spectral_axis[0]
+    v1 = image_cube.spectral_axis[-1]
+    if (v1 < v0):
+        v0, v1 = v1, v0
+    if vmin is not None:
+        if hasattr(vmin, 'unit'):
+            v0 = vmin
+        else:
+            v0 = image_cube.spectral_axis[vmin]
+    if vmax is not None:
+        if hasattr(vmax, 'unit'):
+            v1 = vmax
+        else:
+            v1 = image_cube.spectral_axis[vmax]
+    if vmin is not None or vmax is not None:
+        print('Trimming cube to velocity range of {} to {}'.format(v0,v1))
+        image_cube = image_cube.spectral_slab(v0, v1)
+        print('Trimmed cube '+img_fits+':\n',image_cube)
+        hd3d = image_cube.header
+    # -- Read the noise cube if given
     if rms_fits is not None:
         rms_dat, rms_hd = fits.getdata(rms_fits, header=True)
         unit = convert_bunit(rms_hd['bunit'])
         if rms_hd['naxis'] == 2:
+            print('INFO: The rms is provided as a 2-d map')
             rmsarray = np.broadcast_to(np.expand_dims(rms_dat, axis=0), image_cube.shape)
             rms_cube = SpectralCube(data=rmsarray*unit, header=hd3d, wcs=wcs.WCS(hd3d))
         elif rms_dat.shape[0] == 1:
+            print('INFO: The rms cube has a degenerate velocity axis')
             rmsarray = np.broadcast_to(rms_dat, image_cube.shape)
             rms_cube = SpectralCube(data=rmsarray*unit, header=hd3d, wcs=wcs.WCS(hd3d))
+            print(rms_cube)
         else:            
             rms_cube = SpectralCube.read(rms_fits)
+            if rms_cube.header['CUNIT3'] == 'Hz':
+                rms_cube = rms_cube.with_spectral_unit(u.m / u.s, 'radio')
+            if vmin is not None or vmax is not None:
+                rms_cube = rms_cube.spectral_slab(v0, v1)
         if rms_cube.unit != image_cube.unit:
             raise RuntimeError('Noise cube units', rms_cube.unit, 
                                'differ from image units', image_cube.unit)
         print('Noise cube '+rms_fits+':\n',rms_cube)
     else:
+    # -- or read the gain cube
         if gain_fits is not None:
             try:
                 gain_cube  = SpectralCube.read(gain_fits)
+                if gain_cube.header['CUNIT3'] == 'Hz':
+                    gain_cube = gain_cube.with_spectral_unit(u.m / u.s, 'radio')
+                if vmin is not None or vmax is not None:
+                    gain_cube = gain_cube.spectral_slab(v0, v1)
                 print('Gain cube '+gain_fits+':\n',gain_cube)
             except ValueError:
                 gain_cube = fits.getdata(gain_fits)
-                print('Gain is not a cube - reading as ndarray')
+                print('INFO: Gain is not a cube - reading as ndarray')
             rms_cube = makenoise(image_cube, gain_cube, edge=edgech, rms=rms,
                                  splitchan=splitchan)
         else:
@@ -298,10 +348,12 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     # --- Peak brightness and effective linewidth (optional)
     if output_peak:
         peak = image_cube.max(axis=0)
+        peak[peak <= 0] = np.nan
         writemom(peak, type='peak', filename=pth+basename, hdr=hd2d)
         vpeak = dil_mskcub.argmax_world(axis=0).to(u.km/u.s)
         writemom(vpeak, type='vpeak', filename=pth+basename, hdr=hd2d)
         vwidth = dil_mskcub_mom0 / (peak*np.sqrt(2*np.pi))
+        vwidth[dil_mskcub_mom0 <= 0] = np.nan
         writemom(vwidth, type='vwidth', filename=pth+basename, hdr=hd2d)
     # --- Moment 1: mean velocity must be in range of cube
     dil_mskcub_mom1 = dil_mskcub.moment(order=1).to(u.km/u.s)

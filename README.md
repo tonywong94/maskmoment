@@ -114,12 +114,14 @@ How to use:
         Output the moment maps in K units if the cube is in Jy/beam units.
         Default: True
     vmin : float or :class:`~astropy.units.Quantity`, optional
-        Minimum channel number or velocity to use for moment calculation.  
+        Minimum channel number or velocity to use for all calculations.  Note
+        that channels are discarded before any rms estimation using edgech.
         If given as astropy quantity, should be provided in velocity units.  
         If NOT given as astropy quantity, interpreted as channel number.
         Default: Do not impose a velocity cut.
     vmax : float or :class:`~astropy.units.Quantity`, optional
-        Maximum channel number or velocity to use for moment calculation. 
+        Maximum channel number or velocity to use for all calculations.  Note
+        that channels are discarded before any rms estimation using edgech.
         If given as astropy quantity, should be provided in velocity units.  
         If NOT given as astropy quantity, interpreted as channel number.
         Default: Do not impose a velocity cut.

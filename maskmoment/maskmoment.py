@@ -33,7 +33,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         This should have the same dimensions and units as the image cube.
         If it is a 2D array it will be replicated along the velocity axis.
         NOTE: If rms_fits is not given, a noise cube is generated from the
-        image cube, after removing any gain variation using the gain cube.
+        image cube, taking into account any gain variation using the gain cube.
     rms : float, optional
         Global estimate of the rms noise, to be used instead of trying
         to estimate it from the data.  It should have the units of the input cube.
@@ -264,29 +264,29 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     #
     # --- GENERATE AND OUTPUT SNR CUBE, PEAK SNR IMAGE
     #
+    snr_cube = image_cube / rms_cube
+    print('SNR cube:\n',snr_cube)
+    if output_snr_cube:
+        hd3d['datamin'] = snr_cube.min().value
+        hd3d['datamax'] = snr_cube.max().value
+        hd3d['bunit'] = ' '
+        fits.writeto(pth+basename+'.snrcube.fits.gz', snr_cube._data.astype(np.float32),
+                     hd3d, overwrite=True)
+        print('Wrote', pth+basename+'.snrcube.fits.gz')    
+    if output_snr_peak:
+        snr_peak = snr_cube.max(axis=0)
+        hd2d['datamin'] = np.nanmin(snr_peak.value)
+        hd2d['datamax'] = np.nanmax(snr_peak.value)
+        hd2d['bunit'] = ' '
+        fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
+                     hd2d, overwrite=True)
+        print('Wrote', pth+basename+'.snrpk.fits.gz')
+    #
+    # --- GENERATE AND OUTPUT DILATED MASK
+    #
     if mask_fits is not None:
         dilatedmask = fits.getdata(mask_fits)
     else:
-        snr_cube = image_cube / rms_cube
-        print('SNR cube:\n',snr_cube)
-        if output_snr_cube:
-            hd3d['datamin'] = snr_cube.min().value
-            hd3d['datamax'] = snr_cube.max().value
-            hd3d['bunit'] = ' '
-            fits.writeto(pth+basename+'.snrcube.fits.gz', snr_cube._data.astype(np.float32),
-                         hd3d, overwrite=True)
-            print('Wrote', pth+basename+'.snrcube.fits.gz')    
-        if output_snr_peak:
-            snr_peak = snr_cube.max(axis=0)
-            hd2d['datamin'] = np.nanmin(snr_peak.value)
-            hd2d['datamax'] = np.nanmax(snr_peak.value)
-            hd2d['bunit'] = ' '
-            fits.writeto(pth+basename+'.snrpk.fits.gz', snr_peak.astype(np.float32),
-                         hd2d, overwrite=True)
-            print('Wrote', pth+basename+'.snrpk.fits.gz')
-        #
-        # --- GENERATE AND OUTPUT DILATED MASK
-        #
         if fwhm is not None or vsm is not None:
             sm_snrcube = smcube(snr_cube, fwhm=fwhm, vsm=vsm, vsm_type=vsm_type, 
                                 edgech=edgech, huge=huge_operations)

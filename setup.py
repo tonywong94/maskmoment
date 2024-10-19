@@ -7,7 +7,7 @@ from setuptools import setup
 
 setuptools.setup(
     name='maskmoment',
-    version='1.2.0',
+    version='1.2.2',
     description='Masked moments of radio data cubes',
     long_description=long_description,
     long_description_content_type="text/markdown",

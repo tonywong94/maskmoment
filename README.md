@@ -106,7 +106,8 @@ How to use:
         Output the peak SNR image in addition to the moment maps.
         Default: False
     output_2d_mask : boolean, optional
-        Output the projected 2-D mask as well as the newly generated mask.
+        Output the projected 2-D mask (replicated along the velocity axis)
+        as well as the newly generated mask.
         The projected mask at a given pixel is valid for all channels as
         long as the parent mask is valid for any channel.
         Default: False

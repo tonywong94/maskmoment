@@ -124,9 +124,10 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         Output the smoothed cube in SNR units in addition to the moment maps.
         Default: False
     output_2d_mask : boolean, optional
-        Output the projected 2-D mask as well as the newly generated mask.
-        The projected mask at a given pixel is valid as long as the parent mask 
-        is valid for any channel.
+        Output the projected 2-D mask (replicated along the velocity axis)
+        as well as the newly generated mask.
+        The projected mask at a given pixel is valid for all channels as
+        long as the parent mask is valid for any channel.
         Default: False
     to_kelvin : boolean, optional
         Output the moment maps in K units if the cube is in Jy/beam units.

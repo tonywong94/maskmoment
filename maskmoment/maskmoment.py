@@ -186,6 +186,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
     if hd3d['CUNIT3'] == 'Hz':
         print('Image cube in frequency '+img_fits+':\n',image_cube)
         image_cube = image_cube.with_spectral_unit(u.m / u.s, 'radio')
+        hd3d = image_cube.header
     hd2d = hd3d.copy()
     hd2d['WCSAXES'] = 2
     for key in ['CRVAL3', 'CTYPE3', 'CRPIX3', 'CDELT3', 'CUNIT3']:
@@ -339,7 +340,7 @@ def maskmoment(img_fits, gain_fits=None, rms_fits=None, mask_fits=None, outdir='
         else:
             print('WARNING: Beam info is missing')
         image_cube = image_cube.to(u.K)
-        rms_cube = rms_cube.to(u.K)
+        rms_cube   = rms_cube.to(u.K)
     # --- Moment 0
     dil_mskcub = image_cube.with_mask(dilatedmask > 0)
     dil_mskcub_mom0 = dil_mskcub.moment(order=0).to(image_cube.unit*u.km/u.s)

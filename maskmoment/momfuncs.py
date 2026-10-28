@@ -554,7 +554,7 @@ def findflux(imcube, rmscube, mask=None, projmask=None):
     return fluxtab
 
 
-def calc_moments(imcube, rmscube, mask=None):
+def calc_moments(imcube, rmscube, mask=None, chunk_mb=64):
     """
     Calculate moments of a masked cube and their errors
 
@@ -568,6 +568,11 @@ def calc_moments(imcube, rmscube, mask=None):
     mask : `~numpy.ndarray`
         A binary mask array (0s and 1s) to be applied before measuring the flux
         and uncertainty.  This should NOT be a SpectralCube.
+    chunk_mb : float, optional
+        Approximate size in MB of each block of the cube processed at once.
+        The cube is processed in strips along the y-axis so that memory use
+        stays bounded for very large cubes.
+        Default: 64 (peak memory is roughly 6x this)
 
     Returns
     -------
@@ -577,7 +582,7 @@ def calc_moments(imcube, rmscube, mask=None):
     errmom : `~numpy.ndarray`
         A stack of the three uncertainty maps.
     """
-    
+
     if mask is not None:
         immask  = imcube.with_mask(mask > 0)
         errmask = rmscube.with_mask(mask > 0)
@@ -585,32 +590,45 @@ def calc_moments(imcube, rmscube, mask=None):
         immask  = imcube
         errmask = rmscube
 
-    tbarry   = immask.unitless_filled_data[:]
-    nsearry  = errmask.unitless_filled_data[:]
-    vels     = immask.spectral_axis.to(u.km/u.s)
-    vel3d    = np.expand_dims(vels, axis=(1, 2))
-    velarry  = np.broadcast_to(vel3d, immask.shape)
-    
-    mom0     = np.nansum( tbarry, axis=0 )
-    mom0_var = np.nansum( nsearry**2, axis=0 )
-    mom0_err = np.sqrt(mom0_var)
+    nchan, ny, nx = immask.shape
+    # Plain floats: astropy Quantity arithmetic on full cubes is slow
+    vel = immask.spectral_axis.to(u.km/u.s).value[:, None, None]
 
-    mom1     = np.nansum( tbarry * velarry, axis=0) / mom0
-    mom1_var = np.nansum( ((velarry - mom1)/mom0 * nsearry)**2, axis=0 )
-    mom1_err = np.sqrt(mom1_var)
+    # Number of y-rows per strip, so each float64 strip is about chunk_mb
+    rows = max(1, int(chunk_mb * 2**20 / (8 * nchan * nx)))
 
-    mom2     = np.nansum( tbarry * (velarry-mom1)**2, axis=0) / mom0
-    mom2_var = np.nansum( ((mom0 * (velarry-mom1)**2 - np.nansum(tbarry*(velarry
-                    - mom1)**2, axis=0)) / mom0**2 * nsearry)**2 + (2*np.nansum(
-                    tbarry*(velarry-mom1), axis=0)/mom0 * mom1_err)**2, axis=0 )
-    stdev    = np.sqrt(mom2)
-    sderr    = np.sqrt(mom2_var)/(2*stdev)
-    
-    for x in [mom1, stdev, mom1_err, sderr]:
-        x[x == np.inf] = np.nan
-        x[x == -np.inf] = np.nan
+    altmom = np.full((3, ny, nx), np.nan)
+    errmom = np.full((3, ny, nx), np.nan)
 
-    altmom   = np.stack([mom0, mom1, stdev], axis=0)
-    errmom   = np.stack([mom0_err, mom1_err, sderr], axis=0)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        for y0 in range(0, ny, rows):
+            sl = (slice(None), slice(y0, min(y0+rows, ny)), slice(None))
+            tbarry  = np.asarray(immask.unitless_filled_data[sl], dtype=float)
+            nsearry = np.asarray(errmask.unitless_filled_data[sl], dtype=float)
+
+            mom0     = np.nansum(tbarry, axis=0)
+            mom0_err = np.sqrt(np.nansum(nsearry**2, axis=0))
+
+            mom1     = np.nansum(tbarry * vel, axis=0) / mom0
+            dv       = vel - mom1
+            mom1_err = np.sqrt(np.nansum((dv/mom0 * nsearry)**2, axis=0))
+
+            s2       = np.nansum(tbarry * dv**2, axis=0)
+            #s1       = np.nansum(tbarry * dv, axis=0)
+            mom2     = s2 / mom0
+            #mom2_var = np.nansum(((mom0 * dv**2 - s2) / mom0**2 * nsearry)**2
+            #                     + (2*s1/mom0 * mom1_err)**2, axis=0)
+            # Claude notes that s1 is identically zero.
+            mom2_var = np.nansum(((mom0 * dv**2 - s2) / mom0**2 * nsearry)**2, 
+                                 axis=0)
+            stdev    = np.sqrt(mom2)
+            sderr    = np.sqrt(mom2_var)/(2*stdev)
+
+            altmom[:, sl[1], :] = [mom0, mom1, stdev]
+            errmom[:, sl[1], :] = [mom0_err, mom1_err, sderr]
+
+    # Same as before: replace +/-inf with NaN in all but mom0 and its error
+    for arr in (altmom[1:], errmom[1:]):
+        arr[np.isinf(arr)] = np.nan
     return altmom, errmom
 
